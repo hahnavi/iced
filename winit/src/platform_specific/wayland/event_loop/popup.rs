@@ -177,10 +177,12 @@ impl SctkPopup {
     }
 
     pub(crate) fn update_viewport(&mut self, w: u32, h: u32) {
-        let common = self.common.lock().unwrap();
+        let mut common = self.common.lock().unwrap();
         if common.size.width == w && common.size.height == h {
             return;
         }
+        common.size.width = w;
+        common.size.height = h;
         if let Some(viewport) = common.wp_viewport.as_ref() {
             // Set inner size without the borders.
             viewport.set_destination(w as i32, h as i32);

@@ -1331,6 +1331,10 @@ impl SctkState {
                             positioner.set_size(size.0 as i32, size.1 as i32);
                             existing.data.positioner = Arc::new(positioner);
                             existing.set_size(size.0, size.1, TOKEN_CTR.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
+                            // `set_size` skips repositioning when the dimensions match the current
+                            // size, but the anchor may still have moved (e.g. the pointer entered a
+                            // different menu bar root). Apply the new positioner unconditionally.
+                            existing.popup.reposition(&existing.data.positioner, TOKEN_CTR.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
                             _ = send_event(&self.events_sender, &self.proxy,
                                 SctkEvent::PopupEvent { variant: crate::sctk_event::PopupEventVariant::Size(size.0, size.1), toplevel_id: existing.data.parent.wl_surface().clone(), parent_id: existing.data.parent.wl_surface().clone(), id: existing.popup.wl_surface().clone(), parent_window: existing.data.parent_window });
                             return Ok(());
