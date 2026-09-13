@@ -47,6 +47,51 @@ use crate::core::{
 
 use iced_runtime::{Action, Task, task};
 pub use operation::scrollable::{AbsoluteOffset, RelativeOffset};
+
+/// The scroll step, in logical pixels, of a single wheel detent for a
+/// viewport of the given size.
+///
+/// Scales with `page_size^(2/3)`, so larger viewports scroll farther per
+/// detent.
+fn wheel_step(page_size: f32) -> f32 {
+    page_size.max(1.0).powf(2.0 / 3.0)
+}
+
+/// Multiplier applied to precise (touchpad) scroll deltas, so a finger
+/// movement covers a comfortable amount of content.
+const PRECISE_SCROLL_SCALE: f32 = 2.5;
+
+/// Time constant, in seconds, of the exponential interpolation used to
+/// animate wheel scrolling. Smaller values are snappier.
+const SMOOTHING_TIME_CONSTANT: f32 = 0.05;
+
+/// Time constant, in seconds, of the momentum decay that follows a precise
+/// (touchpad) scroll gesture.
+const MOMENTUM_TIME_CONSTANT: f32 = 0.3;
+
+/// Minimum velocity, in logical pixels per second, required to start a
+/// momentum glide once a precise scroll gesture ends.
+const MOMENTUM_MIN_VELOCITY: f32 = 45.0;
+
+/// Maximum time between the last precise scroll input and the end of the
+/// gesture for a momentum glide to start. Momentum never starts once the
+/// content has been resting, so stopping the fingers stops the content.
+const MOMENTUM_MAX_LAG: Duration = Duration::from_millis(120);
+
+/// Time constant, in seconds, with which velocity is discounted by how long
+/// before the end of the gesture the last precise input happened.
+const MOMENTUM_LAG_DECAY: f32 = 0.08;
+
+/// Maximum amount of time, in seconds, accounted for by a single animation
+/// frame. Prevents jumps after a long frame.
+const MAX_FRAME_DELTA: f32 = 0.05;
+
+/// Maximum velocity, in logical pixels per second, tracked for momentum.
+const MAX_SCROLL_VELOCITY: f32 = 8000.0;
+
+/// Distance, in logical pixels, below which an animation snaps to its target.
+const SNAP_DISTANCE: f32 = 0.25;
+
 /// A widget that can vertically display an infinite amount of content with a
 /// scrollbar.
 ///
@@ -1038,7 +1083,9 @@ where
                         return;
                     }
 
-                    let delta = match *delta {
+                    let now = Instant::now();
+
+                    let (delta, precise) = match *delta {
                         mouse::ScrollDelta::Lines { x, y } => {
                             let is_shift_pressed =
                                 state.keyboard_modifiers.shift();
@@ -1058,18 +1105,40 @@ where
                                 Vector::new(y, x)
                             };
 
-                            // TODO: Configurable speed/friction (?)
-                            -movement * 60.0
+                            // Use `page_size^(2/3)` as the distance of a
+                            // wheel detent.
+                            let step = Vector::new(
+                                wheel_step(bounds.width),
+                                wheel_step(bounds.height),
+                            );
+
+                            (
+                                -Vector::new(
+                                    movement.x * step.x,
+                                    movement.y * step.y,
+                                ),
+                                false,
+                            )
                         }
                         mouse::ScrollDelta::Pixels { x, y } => {
-                            -Vector::new(x, y)
+                            (-Vector::new(x, y), true)
                         }
                     };
-                    state.scroll(
-                        self.direction.align(delta),
-                        bounds,
-                        content_bounds,
-                    );
+
+                    let stopping = precise && delta.x == 0.0 && delta.y == 0.0;
+                    let delta = self.direction.align(delta);
+
+                    let moved = if stopping {
+                        state.end_precise_scroll(now, bounds, content_bounds)
+                    } else if precise {
+                        state.scroll_precise(delta, bounds, content_bounds, now)
+                    } else {
+                        state.scroll_wheel(delta, bounds, content_bounds, now)
+                    };
+
+                    if moved || state.smooth_scroll.is_some() {
+                        shell.request_redraw();
+                    }
 
                     let has_scrolled = notify_scroll(
                         state,
@@ -1081,7 +1150,7 @@ where
 
                     let in_transaction = state.last_scrolled.is_some();
 
-                    if has_scrolled || in_transaction {
+                    if has_scrolled || moved || in_transaction {
                         shell.capture_event();
                     }
                 }
@@ -1093,6 +1162,8 @@ where
                     let Some(origin) = cursor_over_scrollable else {
                         return;
                     };
+
+                    state.cancel_smooth_scroll();
 
                     state.interaction = Interaction::AutoScrolling {
                         origin,
@@ -1116,6 +1187,8 @@ where
                             let Some(position) = cursor_over_scrollable else {
                                 return;
                             };
+
+                            state.cancel_smooth_scroll();
 
                             state.interaction =
                                 Interaction::TouchScrolling(position);
@@ -1284,6 +1357,9 @@ where
                         }
                     }
 
+                    let animating =
+                        state.smooth_tick(*now, bounds, content_bounds);
+
                     let _ = notify_viewport(
                         state,
                         &self.on_scroll,
@@ -1291,6 +1367,10 @@ where
                         content_bounds,
                         shell,
                     );
+
+                    if animating {
+                        shell.request_redraw();
+                    }
                 }
                 _ => {}
             }
@@ -1365,6 +1445,20 @@ where
 
         let translation =
             state.translation(self.direction, bounds, content_bounds);
+
+        // Snap the translation to the physical pixel grid to keep content
+        // crisp while still allowing sub-pixel animation.
+        let scale_factor = defaults.scale_factor as f32;
+        let translation = if scale_factor > 0.0 {
+            let scaled = translation * scale_factor;
+
+            Vector::new(
+                scaled.x.round() / scale_factor,
+                scaled.y.round() / scale_factor,
+            )
+        } else {
+            translation
+        };
 
         let cursor = match cursor_over_scrollable {
             _ if state.suppress_touch_hover
@@ -2074,6 +2168,14 @@ fn notify_viewport<Message>(
     true
 }
 
+/// Returns the maximum scroll offset for the given bounds.
+fn scroll_max(bounds: Rectangle, content_bounds: Rectangle) -> Vector<f32> {
+    Vector::new(
+        (content_bounds.width - bounds.width).max(0.0),
+        (content_bounds.height - bounds.height).max(0.0),
+    )
+}
+
 #[derive(Debug, Clone, Copy)]
 struct State {
     offset_y: Offset,
@@ -2085,6 +2187,29 @@ struct State {
     is_scrollbar_visible: bool,
     touch_press_start: Option<Point>,
     suppress_touch_hover: bool,
+    smooth_scroll: Option<SmoothScroll>,
+}
+
+/// The state of an in-progress smooth scroll animation, as well as the
+/// velocity of the latest precise scroll gesture.
+#[derive(Debug, Clone, Copy)]
+struct SmoothScroll {
+    /// The offset the content is animating towards, if any.
+    target: Option<Vector<f32>>,
+    /// The timestamp of the last animation frame.
+    last_frame: Option<Instant>,
+    /// The timestamp of the last scroll input.
+    last_input: Instant,
+    /// The velocity of the last precise scroll gesture, in logical pixels
+    /// per second.
+    velocity_x: f32,
+    /// The velocity of the last precise scroll gesture, in logical pixels
+    /// per second.
+    velocity_y: f32,
+    /// Whether the last input was precise (for example, a touchpad).
+    precise: bool,
+    /// Whether the content is currently gliding with momentum.
+    gliding: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -2112,6 +2237,7 @@ impl Default for State {
             is_scrollbar_visible: true,
             touch_press_start: None,
             suppress_touch_hover: false,
+            smooth_scroll: None,
         }
     }
 }
@@ -2253,12 +2379,294 @@ impl State {
         }
     }
 
+    /// Cancels any in-progress smooth scroll animation.
+    fn cancel_smooth_scroll(&mut self) {
+        self.smooth_scroll = None;
+    }
+
+    /// Applies a discrete (wheel) scroll by moving an animation target.
+    ///
+    /// Returns whether the content can scroll in the requested direction.
+    fn scroll_wheel(
+        &mut self,
+        delta: Vector<f32>,
+        bounds: Rectangle,
+        content_bounds: Rectangle,
+        now: Instant,
+    ) -> bool {
+        let max = scroll_max(bounds, content_bounds);
+        let current = Vector::new(
+            self.offset_x.absolute(bounds.width, content_bounds.width),
+            self.offset_y.absolute(bounds.height, content_bounds.height),
+        );
+
+        let base = self
+            .smooth_scroll
+            .and_then(|smooth| smooth.target)
+            .unwrap_or(current);
+        let target = Vector::new(
+            (base.x + delta.x).clamp(0.0, max.x),
+            (base.y + delta.y).clamp(0.0, max.y),
+        );
+
+        if target.x == base.x && target.y == base.y {
+            return false;
+        }
+
+        self.unsnap(bounds, content_bounds);
+
+        let smooth = self.smooth_scroll.get_or_insert_with(|| SmoothScroll {
+            target: Some(current),
+            last_frame: None,
+            last_input: now,
+            velocity_x: 0.0,
+            velocity_y: 0.0,
+            precise: false,
+            gliding: false,
+        });
+
+        smooth.target = Some(target);
+        smooth.velocity_x = 0.0;
+        smooth.velocity_y = 0.0;
+        smooth.precise = false;
+        smooth.gliding = false;
+        smooth.last_input = now;
+
+        true
+    }
+
+    /// Applies a precise (touchpad) scroll delta directly to the offset and
+    /// tracks its velocity so the content can glide once the gesture ends.
+    ///
+    /// Returns whether the content moved.
+    fn scroll_precise(
+        &mut self,
+        delta: Vector<f32>,
+        bounds: Rectangle,
+        content_bounds: Rectangle,
+        now: Instant,
+    ) -> bool {
+        self.unsnap(bounds, content_bounds);
+
+        let delta = delta * PRECISE_SCROLL_SCALE;
+        let max = scroll_max(bounds, content_bounds);
+        let current = Vector::new(
+            self.offset_x.absolute(bounds.width, content_bounds.width),
+            self.offset_y.absolute(bounds.height, content_bounds.height),
+        );
+        let next = Vector::new(
+            (current.x + delta.x).clamp(0.0, max.x),
+            (current.y + delta.y).clamp(0.0, max.y),
+        );
+
+        if next.x == current.x && next.y == current.y {
+            return false;
+        }
+
+        self.offset_x = Offset::Absolute(next.x);
+        self.offset_y = Offset::Absolute(next.y);
+
+        let smooth = self.smooth_scroll.get_or_insert_with(|| SmoothScroll {
+            target: None,
+            last_frame: None,
+            last_input: now,
+            velocity_x: 0.0,
+            velocity_y: 0.0,
+            precise: true,
+            gliding: false,
+        });
+
+        let dt = (now - smooth.last_input).as_secs_f32();
+
+        if smooth.precise && dt > 0.0 && dt < 0.1 {
+            let velocity_x =
+                (delta.x / dt).clamp(-MAX_SCROLL_VELOCITY, MAX_SCROLL_VELOCITY);
+            let velocity_y =
+                (delta.y / dt).clamp(-MAX_SCROLL_VELOCITY, MAX_SCROLL_VELOCITY);
+
+            // Weigh recent samples more heavily.
+            smooth.velocity_x = smooth.velocity_x * 0.4 + velocity_x * 0.6;
+            smooth.velocity_y = smooth.velocity_y * 0.4 + velocity_y * 0.6;
+        } else {
+            // The first sample or a long pause; don't derive a velocity from
+            // it.
+            smooth.velocity_x = 0.0;
+            smooth.velocity_y = 0.0;
+        }
+
+        smooth.target = None;
+        smooth.gliding = false;
+        smooth.last_frame = None;
+        smooth.last_input = now;
+        smooth.precise = true;
+
+        true
+    }
+
+    /// Marks the end of a precise (touchpad) scroll gesture, starting a
+    /// momentum glide when the gesture was fast enough.
+    ///
+    /// On Wayland, backends forward the `axis_stop` event as a precise scroll
+    /// without a delta.
+    ///
+    /// Returns whether a momentum glide was started.
+    fn end_precise_scroll(
+        &mut self,
+        now: Instant,
+        bounds: Rectangle,
+        content_bounds: Rectangle,
+    ) -> bool {
+        let Some(smooth) = self.smooth_scroll.as_mut() else {
+            return false;
+        };
+
+        if !smooth.precise || smooth.gliding {
+            return false;
+        }
+
+        let lag = now.duration_since(smooth.last_input).as_secs_f32();
+
+        // If the fingers were already resting, do not start a glide from
+        // stale velocity.
+        if lag >= MOMENTUM_MAX_LAG.as_secs_f32() {
+            smooth.velocity_x = 0.0;
+            smooth.velocity_y = 0.0;
+            return false;
+        }
+
+        let decay = (-lag / MOMENTUM_LAG_DECAY).exp();
+        smooth.velocity_x *= decay;
+        smooth.velocity_y *= decay;
+
+        let velocity = smooth.velocity_x.abs().max(smooth.velocity_y.abs());
+
+        if velocity >= MOMENTUM_MIN_VELOCITY {
+            let current = Vector::new(
+                self.offset_x.absolute(bounds.width, content_bounds.width),
+                self.offset_y.absolute(bounds.height, content_bounds.height),
+            );
+
+            smooth.target = Some(current);
+            smooth.gliding = true;
+            smooth.last_frame = None;
+            return true;
+        }
+
+        smooth.velocity_x = 0.0;
+        smooth.velocity_y = 0.0;
+        return false;
+    }
+
+    /// Advances the smooth scrolling animation by one frame.
+    ///
+    /// Returns whether another frame is needed.
+    fn smooth_tick(
+        &mut self,
+        now: Instant,
+        bounds: Rectangle,
+        content_bounds: Rectangle,
+    ) -> bool {
+        let Some(mut smooth) = self.smooth_scroll.take() else {
+            return false;
+        };
+
+        // The same redraw event can be processed more than once per frame
+        // (for example, when publishing a message rebuilds the user
+        // interface). Only advance the animation once per frame, or the
+        // scroll would move in large, uneven steps.
+        if smooth.last_frame == Some(now) {
+            self.smooth_scroll = Some(smooth);
+            return true;
+        }
+
+        let max = scroll_max(bounds, content_bounds);
+        let current = Vector::new(
+            self.offset_x.absolute(bounds.width, content_bounds.width),
+            self.offset_y.absolute(bounds.height, content_bounds.height),
+        );
+
+        let dt = match smooth.last_frame {
+            Some(last_frame) => (now - last_frame).as_secs_f32(),
+            None => 1.0 / 60.0,
+        };
+        let dt = if dt <= 0.0 {
+            1.0 / 60.0
+        } else {
+            dt.min(MAX_FRAME_DELTA)
+        };
+        smooth.last_frame = Some(now);
+
+        let mut next = current;
+        let mut animating = false;
+
+        if let Some(mut target) = smooth.target {
+            if smooth.gliding {
+                target.x += smooth.velocity_x * dt;
+                target.y += smooth.velocity_y * dt;
+
+                let decay = (-dt / MOMENTUM_TIME_CONSTANT).exp();
+                smooth.velocity_x *= decay;
+                smooth.velocity_y *= decay;
+            }
+
+            target.x = target.x.clamp(0.0, max.x);
+            target.y = target.y.clamp(0.0, max.y);
+
+            // Stop the glide at the edges of the content.
+            if target.x <= 0.0 || target.x >= max.x {
+                smooth.velocity_x = 0.0;
+            }
+            if target.y <= 0.0 || target.y >= max.y {
+                smooth.velocity_y = 0.0;
+            }
+
+            let alpha = 1.0 - (-dt / SMOOTHING_TIME_CONSTANT).exp();
+
+            next = Vector::new(
+                current.x + (target.x - current.x) * alpha,
+                current.y + (target.y - current.y) * alpha,
+            );
+
+            let settled = (target.x - next.x).abs() <= SNAP_DISTANCE
+                && (target.y - next.y).abs() <= SNAP_DISTANCE
+                && smooth.velocity_x.abs() < MOMENTUM_MIN_VELOCITY
+                && smooth.velocity_y.abs() < MOMENTUM_MIN_VELOCITY;
+
+            if settled {
+                next = target;
+                smooth.target = None;
+                smooth.gliding = false;
+                smooth.velocity_x = 0.0;
+                smooth.velocity_y = 0.0;
+            } else {
+                smooth.target = Some(target);
+                animating = true;
+            }
+        }
+
+        self.offset_x = Offset::Absolute(next.x);
+        self.offset_y = Offset::Absolute(next.y);
+
+        // Keep tracking velocity while the gesture may still be active, so a
+        // gesture end arriving shortly after the last movement can start a
+        // momentum glide. A glide is never started once the input has been
+        // quiet, so stopping the fingers stops the content.
+        let stale = now.duration_since(smooth.last_input) >= MOMENTUM_MAX_LAG;
+
+        if animating || (smooth.precise && !stale) {
+            self.smooth_scroll = Some(smooth);
+        }
+
+        animating
+    }
+
     fn scroll_y_to(
         &mut self,
         percentage: f32,
         bounds: Rectangle,
         content_bounds: Rectangle,
     ) {
+        self.cancel_smooth_scroll();
         self.offset_y = Offset::Relative(percentage.clamp(0.0, 1.0));
         self.unsnap(bounds, content_bounds);
     }
@@ -2269,11 +2677,14 @@ impl State {
         bounds: Rectangle,
         content_bounds: Rectangle,
     ) {
+        self.cancel_smooth_scroll();
         self.offset_x = Offset::Relative(percentage.clamp(0.0, 1.0));
         self.unsnap(bounds, content_bounds);
     }
 
     fn snap_to(&mut self, offset: RelativeOffset<Option<f32>>) {
+        self.cancel_smooth_scroll();
+
         if let Some(x) = offset.x {
             self.offset_x = Offset::Relative(x.clamp(0.0, 1.0));
         }
@@ -2284,6 +2695,8 @@ impl State {
     }
 
     fn scroll_to(&mut self, offset: AbsoluteOffset<Option<f32>>) {
+        self.cancel_smooth_scroll();
+
         if let Some(x) = offset.x {
             self.offset_x = Offset::Absolute(x.max(0.0));
         }
@@ -2300,6 +2713,7 @@ impl State {
         bounds: Rectangle,
         content_bounds: Rectangle,
     ) {
+        self.cancel_smooth_scroll();
         self.scroll(Vector::new(offset.x, offset.y), bounds, content_bounds);
     }
 
@@ -2324,24 +2738,20 @@ impl State {
     ) -> Vector {
         Vector::new(
             if let Some(horizontal) = direction.horizontal() {
-                self.offset_x
-                    .translation(
-                        bounds.width,
-                        content_bounds.width,
-                        horizontal.alignment,
-                    )
-                    .round()
+                self.offset_x.translation(
+                    bounds.width,
+                    content_bounds.width,
+                    horizontal.alignment,
+                )
             } else {
                 0.0
             },
             if let Some(vertical) = direction.vertical() {
-                self.offset_y
-                    .translation(
-                        bounds.height,
-                        content_bounds.height,
-                        vertical.alignment,
-                    )
-                    .round()
+                self.offset_y.translation(
+                    bounds.height,
+                    content_bounds.height,
+                    vertical.alignment,
+                )
             } else {
                 0.0
             },
@@ -2882,5 +3292,248 @@ pub fn default(theme: &Theme, status: Status) -> Style {
                 auto_scroll,
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const VIEWPORT: Rectangle = Rectangle {
+        x: 0.0,
+        y: 0.0,
+        width: 100.0,
+        height: 100.0,
+    };
+
+    fn content(height: f32) -> Rectangle {
+        Rectangle {
+            x: 0.0,
+            y: 0.0,
+            width: 100.0,
+            height,
+        }
+    }
+
+    fn offset_y(state: &State, content_bounds: Rectangle) -> f32 {
+        state
+            .offset_y
+            .absolute(VIEWPORT.height, content_bounds.height)
+    }
+
+    #[test]
+    fn wheel_scroll_is_animated() {
+        let content_bounds = content(1000.0);
+        let start = Instant::now();
+        let mut state = State::default();
+
+        let moved = state.scroll_wheel(
+            Vector::new(0.0, wheel_step(VIEWPORT.height)),
+            VIEWPORT,
+            content_bounds,
+            start,
+        );
+        assert!(moved);
+
+        let mut now = start;
+        let mut frames = 0;
+        while state.smooth_tick(now, VIEWPORT, content_bounds) {
+            now += Duration::from_millis(16);
+            frames += 1;
+            assert!(frames < 100, "animation did not settle");
+        }
+
+        assert!(offset_y(&state, content_bounds) > 0.0);
+        assert!(
+            (offset_y(&state, content_bounds) - wheel_step(VIEWPORT.height))
+                .abs()
+                < 0.001
+        );
+        assert!(state.smooth_scroll.is_none());
+    }
+
+    #[test]
+    fn animation_advances_once_per_frame() {
+        let content_bounds = content(1000.0);
+        let start = Instant::now();
+        let mut state = State::default();
+
+        let moved = state.scroll_wheel(
+            Vector::new(0.0, wheel_step(VIEWPORT.height)),
+            VIEWPORT,
+            content_bounds,
+            start,
+        );
+        assert!(moved);
+
+        // A redraw event can be processed more than once per frame (for
+        // example, when publishing a message rebuilds the user interface).
+        assert!(state.smooth_tick(start, VIEWPORT, content_bounds));
+        let after_first_frame = offset_y(&state, content_bounds);
+
+        assert!(state.smooth_tick(start, VIEWPORT, content_bounds));
+        assert_eq!(offset_y(&state, content_bounds), after_first_frame);
+    }
+
+    #[test]
+    fn wheel_scroll_does_not_move_past_the_edge() {
+        let content_bounds = content(1000.0);
+        let start = Instant::now();
+        let mut state = State::default();
+
+        let moved = state.scroll_wheel(
+            Vector::new(0.0, -wheel_step(VIEWPORT.height)),
+            VIEWPORT,
+            content_bounds,
+            start,
+        );
+
+        assert!(!moved);
+        assert!(state.smooth_scroll.is_none());
+    }
+
+    #[test]
+    fn precise_scroll_applies_immediately() {
+        let content_bounds = content(1000.0);
+        let start = Instant::now();
+        let mut state = State::default();
+        let delta = Vector::new(0.0, 10.0);
+
+        assert!(state.scroll_precise(delta, VIEWPORT, content_bounds, start));
+        assert!(
+            (offset_y(&state, content_bounds) - delta.y * PRECISE_SCROLL_SCALE)
+                .abs()
+                < 0.001
+        );
+    }
+
+    #[test]
+    fn precise_scroll_glides_after_the_gesture_ends() {
+        let content_bounds = content(10000.0);
+        let start = Instant::now();
+        let mut state = State::default();
+
+        // Sample a couple of precise deltas to build up velocity.
+        let mut now = start;
+        for _ in 0..2 {
+            assert!(state.scroll_precise(
+                Vector::new(0.0, 10.0),
+                VIEWPORT,
+                content_bounds,
+                now,
+            ));
+            now += Duration::from_millis(10);
+        }
+
+        let before_glide = offset_y(&state, content_bounds);
+
+        // Letting go of the touchpad reports the end of the gesture on
+        // Wayland (the `axis_stop` event).
+        let _ = state.end_precise_scroll(now, VIEWPORT, content_bounds);
+
+        let mut frames = 0;
+        while state.smooth_tick(now, VIEWPORT, content_bounds) {
+            now += Duration::from_millis(16);
+            frames += 1;
+            assert!(frames < 1000, "momentum did not settle");
+        }
+
+        assert!(
+            offset_y(&state, content_bounds) > before_glide,
+            "content should glide after the gesture ends"
+        );
+    }
+
+    #[test]
+    fn precise_scroll_stops_at_the_edge() {
+        let content_bounds = content(200.0);
+        let start = Instant::now();
+        let mut state = State::default();
+
+        let mut now = start;
+        for _ in 0..2 {
+            let _ = state.scroll_precise(
+                Vector::new(0.0, 50.0),
+                VIEWPORT,
+                content_bounds,
+                now,
+            );
+            now += Duration::from_millis(10);
+        }
+
+        let _ = state.end_precise_scroll(now, VIEWPORT, content_bounds);
+
+        let mut frames = 0;
+        while state.smooth_tick(now, VIEWPORT, content_bounds) {
+            now += Duration::from_millis(16);
+            frames += 1;
+            assert!(frames < 1000, "momentum did not settle");
+        }
+
+        assert!((offset_y(&state, content_bounds) - 100.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn precise_scroll_does_not_glide_after_a_pause() {
+        let content_bounds = content(10000.0);
+        let start = Instant::now();
+        let mut state = State::default();
+
+        let mut now = start;
+        for _ in 0..2 {
+            let _ = state.scroll_precise(
+                Vector::new(0.0, 10.0),
+                VIEWPORT,
+                content_bounds,
+                now,
+            );
+            now += Duration::from_millis(10);
+        }
+
+        let before_end = offset_y(&state, content_bounds);
+
+        // The fingers were already resting before the gesture ended.
+        let end = now + Duration::from_millis(500);
+        let _ = state.end_precise_scroll(end, VIEWPORT, content_bounds);
+        assert_eq!(offset_y(&state, content_bounds), before_end);
+
+        let mut frames = 0;
+        while state.smooth_tick(end, VIEWPORT, content_bounds) {
+            frames += 1;
+            assert!(frames < 100, "no momentum should start after a pause");
+        }
+
+        assert_eq!(offset_y(&state, content_bounds), before_end);
+    }
+
+    #[test]
+    fn precise_scroll_does_not_glide_without_a_gesture_end() {
+        let content_bounds = content(10000.0);
+        let start = Instant::now();
+        let mut state = State::default();
+
+        let mut now = start;
+        for _ in 0..2 {
+            let _ = state.scroll_precise(
+                Vector::new(0.0, 10.0),
+                VIEWPORT,
+                content_bounds,
+                now,
+            );
+            now += Duration::from_millis(10);
+        }
+
+        let after_input = offset_y(&state, content_bounds);
+
+        // Ticking frames without a gesture end must not move the content on
+        // its own.
+        for _ in 0..60 {
+            if !state.smooth_tick(now, VIEWPORT, content_bounds) {
+                break;
+            }
+            now += Duration::from_millis(16);
+        }
+
+        assert_eq!(offset_y(&state, content_bounds), after_input);
     }
 }

@@ -318,24 +318,51 @@ pub fn window_event(
             Some(position),
             scale_factor,
         ))),
-        WindowEvent::MouseWheel { delta, .. } => match delta {
-            winit::event::MouseScrollDelta::LineDelta(delta_x, delta_y) => {
-                Some(Event::Mouse(mouse::Event::WheelScrolled {
-                    delta: mouse::ScrollDelta::Lines {
-                        x: delta_x,
-                        y: delta_y,
-                    },
-                }))
+        WindowEvent::MouseWheel { delta, phase, .. } => {
+            let zero_delta = match &delta {
+                winit::event::MouseScrollDelta::LineDelta(x, y) => {
+                    *x == 0.0 && *y == 0.0
+                }
+                winit::event::MouseScrollDelta::PixelDelta(position) => {
+                    position.x == 0.0 && position.y == 0.0
+                }
+            };
+
+            // An empty scroll event is only meaningful when it marks the end
+            // of a continuous scroll gesture. In that case, a precise scroll
+            // without a delta is forwarded so that the `Scrollable` widget can
+            // start momentum scrolling.
+            if zero_delta
+                && !matches!(
+                    phase,
+                    winit::event::TouchPhase::Ended
+                        | winit::event::TouchPhase::Cancelled
+                )
+            {
+                return None;
             }
-            winit::event::MouseScrollDelta::PixelDelta(position) => {
-                Some(Event::Mouse(mouse::Event::WheelScrolled {
-                    delta: mouse::ScrollDelta::Pixels {
-                        x: position.x as f32,
-                        y: position.y as f32,
-                    },
-                }))
+
+            match delta {
+                winit::event::MouseScrollDelta::LineDelta(delta_x, delta_y) => {
+                    Some(Event::Mouse(mouse::Event::WheelScrolled {
+                        delta: mouse::ScrollDelta::Lines {
+                            x: delta_x,
+                            y: delta_y,
+                        },
+                    }))
+                }
+                winit::event::MouseScrollDelta::PixelDelta(position) => {
+                    let position = position.to_logical::<f32>(scale_factor);
+
+                    Some(Event::Mouse(mouse::Event::WheelScrolled {
+                        delta: mouse::ScrollDelta::Pixels {
+                            x: position.x,
+                            y: position.y,
+                        },
+                    }))
+                }
             }
-        },
+        }
         // Ignore keyboard presses/releases during window focus/unfocus
         WindowEvent::KeyboardInput { is_synthetic, .. } if is_synthetic => None,
         WindowEvent::KeyboardInput { event, .. } => Some(Event::Keyboard({
