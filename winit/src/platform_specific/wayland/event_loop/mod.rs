@@ -55,7 +55,13 @@ use std::{
 use log::error;
 use wayland_backend::client::Backend;
 use wayland_client::globals::GlobalError;
-use wayland_protocols::wp::{keyboard_shortcuts_inhibit::zv1::client::zwp_keyboard_shortcuts_inhibit_manager_v1, text_input::zv3::client::zwp_text_input_v3::{ContentHint, ContentPurpose}};
+use wayland_protocols::{
+    wp::{keyboard_shortcuts_inhibit::zv1::client::zwp_keyboard_shortcuts_inhibit_manager_v1, text_input::zv3::client::zwp_text_input_v3::{ContentHint, ContentPurpose}},
+    xdg::{
+        dialog::v1::client::xdg_wm_dialog_v1::XdgWmDialogV1,
+        foreign::zv2::client::zxdg_importer_v2::ZxdgImporterV2,
+    },
+};
 use winit::{dpi::LogicalSize, event_loop::OwnedDisplayHandle, window::ImePurpose};
 
 use self::state::SctkState;
@@ -142,6 +148,7 @@ impl SctkEventLoop {
                                 if let Some(v) = state.pending_corner_radius.remove(&id) {
                                     _ = state.handle_action(iced_runtime::platform_specific::wayland::Action::RoundedCorners(id, Some(v)));
                                 }
+                                state.apply_dialog_settings(id);
                             }
                             crate::platform_specific::Action::RemoveWindow(
                                 id,
@@ -153,6 +160,9 @@ impl SctkEventLoop {
                                     .position(|window| id == window.id)
                                 {
                                     let w = state.windows.remove(pos);
+                                    _ = state.pending_dialog_settings.remove(&id);
+                                    _ = state.xdg_imported.remove(&id);
+                                    _ = state.xdg_dialogs.remove(&id);
                                     for subsurface_id in state
                                         .subsurfaces
                                         .iter()
@@ -363,6 +373,15 @@ impl SctkEventLoop {
                             .expect("wl_shm is not available"),
                         xdg_shell_state: XdgShell::bind(&globals, &qh)
                             .expect("xdg shell is not available"),
+                        xdg_wm_dialog: registry_state
+                            .bind_one::<XdgWmDialogV1, _, _>(&qh, 1..=1, ())
+                            .ok(),
+                        xdg_importer: registry_state
+                            .bind_one::<ZxdgImporterV2, _, _>(&qh, 1..=1, ())
+                            .ok(),
+                        xdg_dialogs: HashMap::new(),
+                        xdg_imported: HashMap::new(),
+                        pending_dialog_settings: HashMap::new(),
                         layer_shell: LayerShell::bind(&globals, &qh).ok(),
                         activation_state: ActivationState::bind(&globals, &qh)
                             .ok(),

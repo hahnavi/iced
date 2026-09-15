@@ -3,6 +3,7 @@
 pub mod activation;
 pub mod blur;
 pub mod corner_radius;
+pub mod dialog;
 pub mod keyboard_shortcuts_inhibit;
 pub mod layer_surface;
 pub mod overlap_notify;

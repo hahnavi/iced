@@ -4,6 +4,10 @@ use std::fmt::Debug;
 
 use iced_core::{Rectangle, window::Id};
 
+use crate::oneshot;
+
+use cctk::sctk::reexports::client::protocol::wl_surface::WlSurface;
+
 /// activation Actions
 pub mod activation;
 
@@ -37,6 +41,12 @@ pub enum Action {
     RoundedCorners(iced_core::window::Id, Option<CornerRadius>),
     /// Blur effect for a surface
     BlurSurface(Id, Option<Vec<Rectangle>>),
+    /// Sets the parent toplevel of a window from an xdg-foreign handle.
+    SetWindowParent(Id, Option<String>),
+    /// Marks a window as a dialog and optionally modal (xdg-dialog-v1).
+    SetWindowModal(Id, bool),
+    /// Requests the Wayland surface of a window.
+    WindowSurface(Id, oneshot::Sender<Option<WlSurface>>),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
@@ -77,6 +87,17 @@ impl Debug for Action {
                 .field(id)
                 .field(rectangles)
                 .finish(),
+            Action::SetWindowParent(id, _) => {
+                f.debug_tuple("SetWindowParent").field(id).finish()
+            }
+            Action::SetWindowModal(id, modal) => f
+                .debug_tuple("SetWindowModal")
+                .field(id)
+                .field(modal)
+                .finish(),
+            Action::WindowSurface(id, _) => {
+                f.debug_tuple("WindowSurface").field(id).finish()
+            }
         }
     }
 }

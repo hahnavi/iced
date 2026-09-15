@@ -118,7 +118,15 @@ use wayland_protocols::{
         text_input::zv3::client::zwp_text_input_v3::ZwpTextInputV3,
         viewporter::client::wp_viewport::WpViewport,
     },
-    xdg::shell::client::{xdg_surface::XdgSurface, xdg_toplevel::XdgToplevel},
+    xdg::{
+        dialog::v1::client::{
+            xdg_dialog_v1::XdgDialogV1, xdg_wm_dialog_v1::XdgWmDialogV1,
+        },
+        foreign::zv2::client::{
+            zxdg_imported_v2::ZxdgImportedV2, zxdg_importer_v2::ZxdgImporterV2,
+        },
+        shell::client::{xdg_surface::XdgSurface, xdg_toplevel::XdgToplevel},
+    },
 };
 
 pub static TOKEN_CTR: AtomicU32 = AtomicU32::new(0);
@@ -404,6 +412,13 @@ pub(crate) enum FrameStatus {
     Ready,
 }
 
+/// The xdg-foreign parent and xdg-dialog modal state requested for a window.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct DialogSettings {
+    pub(crate) parent: Option<String>,
+    pub(crate) modal: bool,
+}
+
 /// Wrapper to carry sctk state.
 pub struct SctkState {
     pub(crate) connection: Connection,
@@ -464,6 +479,11 @@ pub struct SctkState {
     pub(crate) compositor_state: CompositorState,
     pub(crate) shm_state: Shm,
     pub(crate) xdg_shell_state: XdgShell,
+    pub(crate) xdg_wm_dialog: Option<XdgWmDialogV1>,
+    pub(crate) xdg_dialogs: HashMap<core::window::Id, XdgDialogV1>,
+    pub(crate) xdg_importer: Option<ZxdgImporterV2>,
+    pub(crate) xdg_imported: HashMap<core::window::Id, ZxdgImportedV2>,
+    pub(crate) pending_dialog_settings: HashMap<core::window::Id, DialogSettings>,
     pub(crate) layer_shell: Option<LayerShell>,
     pub(crate) activation_state: Option<ActivationState>,
     pub(crate) session_lock_state: SessionLockState,
@@ -573,6 +593,72 @@ pub(crate) fn receive_frame(
 }
 
 impl SctkState {
+    pub(crate) fn apply_dialog_settings(&mut self, id: core::window::Id) {
+        let Some(settings) = self.pending_dialog_settings.get(&id).cloned()
+        else {
+            return;
+        };
+
+        if self.window_surface(id).is_none() {
+            return;
+        }
+
+        if let Some(parent) = settings
+            .parent
+            .as_deref()
+            .and_then(|parent| parent.strip_prefix("wayland:"))
+        {
+            if let (Some(importer), Some(surface)) =
+                (self.xdg_importer.clone(), self.window_surface(id))
+            {
+                let imported = importer.import_toplevel(
+                    parent.to_owned(),
+                    &self.queue_handle,
+                    (),
+                );
+                imported.set_parent_of(&surface);
+                if let Some(old) = self.xdg_imported.insert(id, imported) {
+                    old.destroy();
+                }
+            }
+        }
+
+        if let Some(manager) = self.xdg_wm_dialog.clone() {
+            if !self.xdg_dialogs.contains_key(&id) {
+                if let Some(toplevel) = self.window_toplevel(id) {
+                    let dialog = manager.get_xdg_dialog(
+                        &toplevel,
+                        &self.queue_handle,
+                        (),
+                    );
+                    _ = self.xdg_dialogs.insert(id, dialog);
+                }
+            }
+
+            if let Some(dialog) = self.xdg_dialogs.get(&id) {
+                if settings.modal {
+                    dialog.set_modal();
+                } else {
+                    dialog.unset_modal();
+                }
+            }
+        }
+    }
+
+    fn window_surface(&self, id: core::window::Id) -> Option<WlSurface> {
+        self.windows
+            .iter()
+            .find(|window| window.id == id)
+            .map(|window| window.wl_surface(&self.connection))
+    }
+
+    fn window_toplevel(&self, id: core::window::Id) -> Option<XdgToplevel> {
+        self.windows
+            .iter()
+            .find(|window| window.id == id)
+            .map(|window| window.xdg_toplevel(&self.connection))
+    }
+
     /// What a surface wants the pointer over it to be.
     pub(crate) fn record_cursor(
         &mut self,
@@ -1787,6 +1873,17 @@ impl SctkState {
                     }
                 }
             }
+            Action::SetWindowParent(id, parent) => {
+                self.pending_dialog_settings.entry(id).or_default().parent = parent;
+                self.apply_dialog_settings(id);
+            }
+            Action::SetWindowModal(id, modal) => {
+                self.pending_dialog_settings.entry(id).or_default().modal = modal;
+                self.apply_dialog_settings(id);
+            }
+            Action::WindowSurface(id, channel) => {
+                let _ = channel.send(self.window_surface(id));
+            }
             Action::BlurSurface(id, rectangles) => {
                 use wayland_protocols::ext::background_effect::v1::client::ext_background_effect_manager_v1;
 
@@ -2185,4 +2282,8 @@ pub(crate) fn send_event(
 
 delegate_noop!(SctkState: ignore WlSubsurface);
 delegate_noop!(SctkState: ignore WlRegion);
+delegate_noop!(SctkState: ignore ZxdgImporterV2);
+delegate_noop!(SctkState: ignore ZxdgImportedV2);
+delegate_noop!(SctkState: ignore XdgWmDialogV1);
+delegate_noop!(SctkState: ignore XdgDialogV1);
 delegate_noop!(SctkState: CosmicSessionLockLayerManagerV1);
