@@ -114,6 +114,7 @@ impl Storage {
         format: wgpu::TextureFormat,
         state: &cryoglyph::Cache,
         cache: &Cache,
+        swash_cache: &mut cryoglyph::SwashCache,
         new_transformation: Transformation,
         bounds: Rectangle,
     ) {
@@ -153,6 +154,7 @@ impl Storage {
                             &mut upload.renderer,
                             &mut group.atlas,
                             &mut upload.buffer_cache,
+                            swash_cache,
                             &cache.text,
                             bounds,
                             new_transformation,
@@ -190,6 +192,7 @@ impl Storage {
                         &mut renderer,
                         &mut group.atlas,
                         &mut buffer_cache,
+                        swash_cache,
                         &cache.text,
                         bounds,
                         new_transformation,
@@ -302,17 +305,42 @@ impl Pipeline {
     }
 }
 
-#[derive(Default)]
 pub struct State {
     renderers: Vec<cryoglyph::TextRenderer>,
     prepare_layer: usize,
     cache: BufferCache,
     storage: Storage,
+    swash_cache: cryoglyph::SwashCache,
+}
+
+impl Default for State {
+    fn default() -> Self {
+        Self {
+            renderers: Vec::new(),
+            prepare_layer: 0,
+            cache: BufferCache::default(),
+            storage: Storage::default(),
+            swash_cache: cryoglyph::SwashCache::new(),
+        }
+    }
 }
 
 impl State {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn prewarm(&mut self, pipeline: &Pipeline, device: &wgpu::Device) {
+        if self.renderers.is_empty() {
+            let mut atlas = pipeline.atlas.write().expect("Write to text atlas");
+
+            self.renderers.push(cryoglyph::TextRenderer::new(
+                &mut atlas,
+                device,
+                wgpu::MultisampleState::default(),
+                None,
+            ));
+        }
     }
 
     pub fn prepare(
@@ -352,6 +380,7 @@ impl State {
                         renderer,
                         &mut atlas,
                         &mut self.cache,
+                        &mut self.swash_cache,
                         text,
                         layer_bounds * layer_transformation,
                         layer_transformation * *transformation,
@@ -380,6 +409,7 @@ impl State {
                         pipeline.format,
                         &pipeline.cache,
                         cache,
+                        &mut self.swash_cache,
                         layer_transformation * *transformation,
                         layer_bounds * layer_transformation,
                     );
@@ -448,6 +478,7 @@ fn prepare(
     renderer: &mut cryoglyph::TextRenderer,
     atlas: &mut cryoglyph::TextAtlas,
     buffer_cache: &mut BufferCache,
+    swash_cache: &mut cryoglyph::SwashCache,
     sections: &[Text],
     layer_bounds: Rectangle,
     layer_transformation: Transformation,
@@ -643,6 +674,6 @@ fn prepare(
         atlas,
         viewport,
         text_areas,
-        &mut cryoglyph::SwashCache::new(),
+        swash_cache,
     )
 }

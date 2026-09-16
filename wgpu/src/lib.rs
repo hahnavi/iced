@@ -103,6 +103,9 @@ impl Renderer {
         default_font: Font,
         default_text_size: Pixels,
     ) -> Self {
+        let mut text = text::State::new();
+        text.prewarm(&engine.text_pipeline, &engine.device);
+
         Self {
             default_font,
             default_text_size,
@@ -113,7 +116,7 @@ impl Renderer {
                 &engine.device,
                 &engine.triangle_pipeline,
             ),
-            text: text::State::new(),
+            text,
             text_viewport: engine.text_pipeline.create_viewport(&engine.device),
 
             #[cfg(any(feature = "svg", feature = "image"))]
