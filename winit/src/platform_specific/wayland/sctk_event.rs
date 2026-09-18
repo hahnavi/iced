@@ -1096,6 +1096,7 @@ impl SctkEvent {
                                     surface_id,
                                     window.raw.as_ref(),
                                 );
+                                let _ = sctk_tx.send(super::Action::ResizeWindow(surface_id));
                             }
                         }
 

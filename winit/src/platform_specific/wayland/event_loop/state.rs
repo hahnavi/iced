@@ -284,6 +284,7 @@ pub struct Common {
     pub(crate) size: LogicalSize<u32>,
     pub(crate) requested_size: (Option<u32>, Option<u32>),
     pub(crate) wp_viewport: Option<WpViewport>,
+    pub(crate) requested_corner_radius: Option<CornerRadius>,
 }
 
 impl Default for Common {
@@ -296,6 +297,7 @@ impl Default for Common {
             size: LogicalSize::new(1, 1),
             requested_size: (None, None),
             wp_viewport: None,
+            requested_corner_radius: None,
         }
     }
 }
@@ -765,6 +767,56 @@ impl SctkState {
         }
 
         // TODO winit sets cursor size after handling the change for the window, so maybe that should be done as well.
+    }
+
+    pub(crate) fn refresh_popup_corner_radius(&mut self, id: core::window::Id) {
+        let (requested, size) = match self.popmgr.popup_id(id) {
+            Some(popup) => {
+                let guard = popup.common.lock().unwrap();
+                (guard.requested_corner_radius, guard.size)
+            }
+            None => return,
+        };
+        let Some(radii) = requested else {
+            return;
+        };
+        let half_min_dim = size.width.min(size.height) / 2;
+        let adjusted_radii = CornerRadius {
+            top_left: radii.top_left.min(half_min_dim),
+            top_right: radii.top_right.min(half_min_dim),
+            bottom_right: radii.bottom_right.min(half_min_dim),
+            bottom_left: radii.bottom_left.min(half_min_dim),
+        };
+        let changed = if let Some((protocol_object, current)) = self.corner_radii.get_mut(&id) {
+            if *current == Some(adjusted_radii) {
+                false
+            } else {
+                match protocol_object.0.as_ref() {
+                    CornerRadiusWrapper::Xdg(protocol_object) => protocol_object.set_radius(
+                        adjusted_radii.top_left,
+                        adjusted_radii.top_right,
+                        adjusted_radii.bottom_right,
+                        adjusted_radii.bottom_left,
+                    ),
+                    CornerRadiusWrapper::Wlr(protocol_object) => protocol_object.set_radius(
+                        adjusted_radii.top_left,
+                        adjusted_radii.top_right,
+                        adjusted_radii.bottom_right,
+                        adjusted_radii.bottom_left,
+                    ),
+                }
+                *current = Some(adjusted_radii);
+                true
+            }
+        } else {
+            false
+        };
+
+        if changed
+            && let Some(popup) = self.popmgr.popup_id(id)
+        {
+            popup.popup.wl_surface().commit();
+        }
     }
 
     pub fn get_popup(
@@ -1525,6 +1577,7 @@ impl SctkState {
                             _ = send_event(&self.events_sender, &self.proxy,
                                 SctkEvent::PopupEvent { variant: crate::sctk_event::PopupEventVariant::Size(width, height), toplevel_id: sctk_popup.data.parent.wl_surface().clone(), parent_id: sctk_popup.data.parent.wl_surface().clone(), id: surface, parent_window: sctk_popup.data.parent_window });
                         }
+                        self.refresh_popup_corner_radius(id);
                     },
                     platform_specific::wayland::popup::Action::Reposition { id, positioner } => {
                         if let Some(sctk_popup) = self
@@ -1565,6 +1618,7 @@ impl SctkState {
                             _ = send_event(&self.events_sender, &self.proxy,
                                 SctkEvent::PopupEvent { variant: crate::sctk_event::PopupEventVariant::Size(size.0, size.1), toplevel_id: sctk_popup.data.parent.wl_surface().clone(), parent_id: sctk_popup.data.parent.wl_surface().clone(), id: surface, parent_window: sctk_popup.data.parent_window });
                         }
+                        self.refresh_popup_corner_radius(id);
                     },
                 }
             },
@@ -1778,7 +1832,8 @@ impl SctkState {
                     let s = if let Some(w) = self.windows.iter_mut().find(|w| w.id == id) {
                         Some((Surface::Xdg(w.xdg_surface(&self.connection), Some(w.xdg_toplevel(&self.connection))), w.window.surface_size().cast::<f64>().to_logical(w.window.scale_factor())))
                     } else if let Some(p) = self.popmgr.popup_id_mut(id) {
-                        let guard = p.common.lock().unwrap();
+                        let mut guard = p.common.lock().unwrap();
+                        guard.requested_corner_radius = v;
                         Some((Surface::Xdg(p.popup.xdg_surface().clone(), None), guard.size.cast::<f64>()))
                     } else if let Some(l) =  self.layer_surfaces.iter_mut().find(|l| l.id == id) {
                         let guard = l.common.lock().unwrap();
