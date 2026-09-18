@@ -133,6 +133,7 @@ impl SctkEventLoop {
                                 }
                             }
                             crate::platform_specific::Action::ResizeWindow(id) => {
+                                state.refresh_popup_corner_radius(id);
                                 if let Some((_, v)) = state.windows.iter()
                                     .find(|w| w.id == id)
                                     .map(|w| state.corner_radii.get(&id))

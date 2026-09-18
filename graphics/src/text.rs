@@ -209,15 +209,49 @@ pub struct Raw {
     pub color: Color,
     /// The clip bounds of the text.
     pub clip_bounds: Rectangle,
+    /// Hash of the buffer layout at record time, see [`Raw::snapshot`].
+    pub content_hash: u64,
+}
+
+impl Raw {
+    pub fn snapshot(&mut self) {
+        use std::hash::{Hash, Hasher};
+
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+
+        if let Some(buffer) = self.buffer.upgrade() {
+            for run in buffer.layout_runs() {
+                run.line_i.hash(&mut hasher);
+                run.line_w.to_bits().hash(&mut hasher);
+                run.line_y.to_bits().hash(&mut hasher);
+                run.line_height.to_bits().hash(&mut hasher);
+                run.rtl.hash(&mut hasher);
+                for glyph in run.glyphs {
+                    glyph.font_id.hash(&mut hasher);
+                    glyph.glyph_id.hash(&mut hasher);
+                    glyph.font_size.to_bits().hash(&mut hasher);
+                    glyph.x.to_bits().hash(&mut hasher);
+                    glyph.y.to_bits().hash(&mut hasher);
+                    glyph.w.to_bits().hash(&mut hasher);
+                    glyph.x_offset.to_bits().hash(&mut hasher);
+                    glyph.y_offset.to_bits().hash(&mut hasher);
+                    glyph.metadata.hash(&mut hasher);
+                }
+            }
+        }
+
+        self.content_hash = hasher.finish();
+    }
 }
 
 impl PartialEq for Raw {
-    fn eq(&self, _other: &Self) -> bool {
-        // TODO: There is no proper way to compare raw buffers
-        // For now, no two instances of `Raw` text will be equal.
-        // This should be fine, but could trigger unnecessary redraws
-        // in the future.
-        false
+    fn eq(&self, other: &Self) -> bool {
+        // Buffers can be mutated in place, so equality is based on the
+        // layout snapshot taken at record time.
+        self.position == other.position
+            && self.color == other.color
+            && self.clip_bounds == other.clip_bounds
+            && self.content_hash == other.content_hash
     }
 }
 

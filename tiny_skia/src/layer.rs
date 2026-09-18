@@ -97,9 +97,11 @@ impl Layer {
 
     pub fn draw_text_raw(
         &mut self,
-        raw: graphics::text::Raw,
+        mut raw: graphics::text::Raw,
         transformation: Transformation,
     ) {
+        raw.snapshot();
+
         let raw = Text::Raw {
             raw,
             transformation,
@@ -128,7 +130,9 @@ impl Layer {
             .push(Item::Cached(text, clip_bounds, transformation));
     }
 
-    pub fn draw_raw(&mut self, raw: Raw, transformation: Transformation) {
+    pub fn draw_raw(&mut self, mut raw: Raw, transformation: Transformation) {
+        raw.snapshot();
+
         let text = Text::Raw {
             raw,
             transformation,
@@ -290,6 +294,17 @@ impl Layer {
                         && bounds_a == bounds_b
                         && transformation_a == transformation_b
                 }
+                (
+                    Item::Group(primitives_a, bounds_a, transformation_a),
+                    Item::Group(primitives_b, bounds_b, transformation_b),
+                ) => {
+                    bounds_a == bounds_b
+                        && transformation_a == transformation_b
+                        && primitives_a == primitives_b
+                }
+                (Item::Live(primitive_a), Item::Live(primitive_b)) => {
+                    primitive_a == primitive_b
+                }
                 _ => false,
             },
         );
@@ -425,5 +440,86 @@ impl<T> Item<T> {
             Item::Group(group, _, _) => group.as_slice(),
             Item::Cached(cache, _, _) => cache,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::{Point, Size};
+    use crate::graphics::Layer as _;
+
+    fn test_layer() -> Layer {
+        Layer::with_bounds(Rectangle::new(
+            Point::new(0.0, 0.0),
+            Size::new(100.0, 100.0),
+        ))
+    }
+
+    fn filled_rect(x: f32, y: f32) -> Primitive {
+        let mut path = tiny_skia::PathBuilder::new();
+        path.push_rect(tiny_skia::Rect::from_xywh(x, y, 10.0, 10.0).unwrap());
+        Primitive::Fill {
+            path: path.finish().unwrap(),
+            paint: tiny_skia::Paint::default(),
+            rule: tiny_skia::FillRule::Winding,
+        }
+    }
+
+    #[test]
+    fn identical_primitive_groups_do_not_damage() {
+        let mut previous = test_layer();
+        let mut current = test_layer();
+
+        previous.draw_primitive_group(
+            vec![filled_rect(10.0, 10.0)],
+            previous.bounds,
+            Transformation::IDENTITY,
+        );
+        current.draw_primitive_group(
+            vec![filled_rect(10.0, 10.0)],
+            current.bounds,
+            Transformation::IDENTITY,
+        );
+
+        assert!(Layer::damage(&previous, &current).is_empty());
+    }
+
+    #[test]
+    fn changed_primitive_group_damages() {
+        let mut previous = test_layer();
+        let mut current = test_layer();
+
+        previous.draw_primitive_group(
+            vec![filled_rect(10.0, 10.0)],
+            previous.bounds,
+            Transformation::IDENTITY,
+        );
+        current.draw_primitive_group(
+            vec![filled_rect(50.0, 50.0)],
+            current.bounds,
+            Transformation::IDENTITY,
+        );
+
+        assert!(!Layer::damage(&previous, &current).is_empty());
+    }
+
+    #[test]
+    fn changed_group_clip_bounds_damage() {
+        let mut previous = test_layer();
+        let mut current = test_layer();
+
+        previous.draw_primitive_group(
+            vec![filled_rect(10.0, 10.0)],
+            Rectangle::new(Point::new(0.0, 0.0), Size::new(50.0, 50.0)),
+            Transformation::IDENTITY,
+        );
+        current.draw_primitive_group(
+            vec![filled_rect(10.0, 10.0)],
+            Rectangle::new(Point::new(0.0, 0.0), Size::new(80.0, 80.0)),
+            Transformation::IDENTITY,
+        );
+
+        assert!(!Layer::damage(&previous, &current).is_empty());
     }
 }
