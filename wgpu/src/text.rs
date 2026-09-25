@@ -332,7 +332,8 @@ impl State {
 
     pub fn prewarm(&mut self, pipeline: &Pipeline, device: &wgpu::Device) {
         if self.renderers.is_empty() {
-            let mut atlas = pipeline.atlas.write().expect("Write to text atlas");
+            let mut atlas =
+                pipeline.atlas.write().expect("Write to text atlas");
 
             self.renderers.push(cryoglyph::TextRenderer::new(
                 &mut atlas,

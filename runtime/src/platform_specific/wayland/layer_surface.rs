@@ -161,7 +161,7 @@ pub enum Action {
         /// id of the layer surface
         id: Id,
         value: bool,
-    }
+    },
 }
 
 impl fmt::Debug for Action {

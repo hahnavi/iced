@@ -790,23 +790,29 @@ impl SctkState {
             bottom_right: radii.bottom_right.min(half_min_dim),
             bottom_left: radii.bottom_left.min(half_min_dim),
         };
-        let changed = if let Some((protocol_object, current)) = self.corner_radii.get_mut(&id) {
+        let changed = if let Some((protocol_object, current)) =
+            self.corner_radii.get_mut(&id)
+        {
             if *current == Some(adjusted_radii) {
                 false
             } else {
                 match protocol_object.0.as_ref() {
-                    CornerRadiusWrapper::Xdg(protocol_object) => protocol_object.set_radius(
-                        adjusted_radii.top_left,
-                        adjusted_radii.top_right,
-                        adjusted_radii.bottom_right,
-                        adjusted_radii.bottom_left,
-                    ),
-                    CornerRadiusWrapper::Wlr(protocol_object) => protocol_object.set_radius(
-                        adjusted_radii.top_left,
-                        adjusted_radii.top_right,
-                        adjusted_radii.bottom_right,
-                        adjusted_radii.bottom_left,
-                    ),
+                    CornerRadiusWrapper::Xdg(protocol_object) => {
+                        protocol_object.set_radius(
+                            adjusted_radii.top_left,
+                            adjusted_radii.top_right,
+                            adjusted_radii.bottom_right,
+                            adjusted_radii.bottom_left,
+                        )
+                    }
+                    CornerRadiusWrapper::Wlr(protocol_object) => {
+                        protocol_object.set_radius(
+                            adjusted_radii.top_left,
+                            adjusted_radii.top_right,
+                            adjusted_radii.bottom_right,
+                            adjusted_radii.bottom_left,
+                        )
+                    }
                 }
                 *current = Some(adjusted_radii);
                 true
@@ -815,9 +821,7 @@ impl SctkState {
             false
         };
 
-        if changed
-            && let Some(popup) = self.popmgr.popup_id(id)
-        {
+        if changed && let Some(popup) = self.popmgr.popup_id(id) {
             popup.popup.wl_surface().commit();
         }
     }
