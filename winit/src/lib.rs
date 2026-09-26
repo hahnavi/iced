@@ -69,6 +69,8 @@ use crate::runtime::user_interface::{self, UserInterface};
 use crate::runtime::{Action, Task};
 
 use program::Program;
+#[cfg(feature = "program")]
+pub use program::Program;
 use window::WindowManager;
 
 use rustc_hash::FxHashMap;
@@ -1322,10 +1324,25 @@ async fn run_instance<P>(
                 };
                 // Initiates a drag resize window state when found.
                 if let Some(func) = window.drag_resize_window_func.as_mut() {
-                    if func(window.raw.as_ref(), &event) {
+                    if func(
+                        window.raw.as_ref(),
+                        &event,
+                        window.mouse_interaction,
+                    ) {
                         continue;
                     }
                 }
+                // to avoid race with the reported modifier state from the popup of
+                // this window, don't empty the modifiers, on focus loss
+                #[cfg(wayland_platform)]
+                if let winit::event::WindowEvent::ModifiersChanged(modifiers) =
+                    &event
+                    && modifiers.state().is_empty()
+                    && platform_specific_handler.has_popup(id)
+                {
+                    continue;
+                }
+
                 match event {
                     winit::event::WindowEvent::SurfaceResized(_) => {
                         window.raw.request_redraw();
@@ -2639,10 +2656,10 @@ where
             .and_then(|window| theme::Base::palette(window.state.theme()))
     });
 
-    cached_user_interfaces
-        .drain()
-        .filter_map(|(id, cache)| {
-            let window = window_manager.get_mut(id)?;
+    window_manager
+        .iter_mut()
+        .filter_map(|(id, window)| {
+            let cache = cached_user_interfaces.remove(&id)?;
 
             Some((
                 id,
@@ -2715,7 +2732,5 @@ fn system_information(
         graphics_backend: graphics.backend,
     }
 }
-#[cfg(feature = "program")]
-pub use program::Program;
 
 pub use platform_specific::*;
