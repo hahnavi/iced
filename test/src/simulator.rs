@@ -100,6 +100,17 @@ where
         }
     }
 
+    /// Rebuilds the simulated interface while preserving compatible widget state.
+    pub fn rebuild(
+        mut self,
+        element: impl Into<Element<'a, Message, Theme, Renderer>>,
+    ) -> Self {
+        let cache = self.raw.into_cache();
+        self.raw =
+            UserInterface::build(element, self.size, cache, &mut self.renderer);
+        self
+    }
+
     /// Finds the target of the given widget [`Selector`] in the [`Simulator`].
     pub fn find<S>(&mut self, selector: S) -> Result<S::Output, Error>
     where

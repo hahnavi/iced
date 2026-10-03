@@ -91,6 +91,7 @@ use crate::core::{
     Pixels, Point, Rectangle, Shell, Size, Theme, Vector, Widget,
 };
 use log::trace;
+use std::collections::BTreeMap;
 
 use crate::DRAG_DEADBAND_DISTANCE;
 
@@ -164,6 +165,7 @@ pub struct PaneGrid<
     height: Length,
     spacing: f32,
     min_size: f32,
+    min_sizes: BTreeMap<Pane, Size>,
     on_click: Option<Box<dyn Fn(Pane) -> Message + 'a>>,
     on_drag: Option<Box<dyn Fn(DragEvent) -> Message + 'a>>,
     #[allow(clippy::type_complexity)]
@@ -203,6 +205,7 @@ where
             height: Length::Fill,
             spacing: 0.0,
             min_size: 50.0,
+            min_sizes: BTreeMap::new(),
             on_click: None,
             on_drag: None,
             on_resize: None,
@@ -232,6 +235,13 @@ where
     /// Sets the minimum size of a [`Pane`] in the [`PaneGrid`] on both axes.
     pub fn min_size(mut self, min_size: impl Into<Pixels>) -> Self {
         self.min_size = min_size.into().0;
+        self
+    }
+
+    /// Sets the minimum width and height of a specific [`Pane`]. Panes without
+    /// an override use the uniform minimum set with [`Self::min_size`].
+    pub fn min_size_for(mut self, pane: Pane, min_size: Size) -> Self {
+        let _ = self.min_sizes.insert(pane, min_size);
         self
     }
 
@@ -324,9 +334,10 @@ where
                     let cursor_position = cursor.position()?;
                     let bounds = layout.bounds();
 
-                    let splits = node.split_regions(
+                    let splits = node.split_regions_with_min_sizes(
                         self.spacing,
                         self.min_size,
+                        &self.min_sizes,
                         bounds.size(),
                     );
 
@@ -427,9 +438,10 @@ where
         limits: &layout::Limits,
     ) -> layout::Node {
         let bounds = limits.resolve(self.width, self.height, Size::ZERO);
-        let regions = self.internal.layout().pane_regions(
+        let regions = self.internal.layout().pane_regions_with_min_sizes(
             self.spacing,
             self.min_size,
+            &self.min_sizes,
             bounds,
         );
 
@@ -551,9 +563,10 @@ where
                                 cursor_position.y - bounds.y,
                             );
 
-                            let splits = node.split_regions(
+                            let splits = node.split_regions_with_min_sizes(
                                 self.spacing,
                                 self.min_size,
+                                &self.min_sizes,
                                 bounds.size(),
                             );
 
@@ -652,9 +665,10 @@ where
                     if let Some((split, _)) = action.picked_split() {
                         let bounds = layout.bounds();
 
-                        let splits = node.split_regions(
+                        let splits = node.split_regions_with_min_sizes(
                             self.spacing,
                             self.min_size,
+                            &self.min_sizes,
                             bounds.size(),
                         );
 
@@ -797,9 +811,10 @@ where
             .and_then(|(split, axis)| {
                 let bounds = layout.bounds();
 
-                let splits = node.split_regions(
+                let splits = node.split_regions_with_min_sizes(
                     self.spacing,
                     self.min_size,
+                    &self.min_sizes,
                     bounds.size(),
                 );
 
@@ -820,9 +835,10 @@ where
                         cursor_position.y - bounds.y,
                     );
 
-                    let splits = node.split_regions(
+                    let splits = node.split_regions_with_min_sizes(
                         self.spacing,
                         self.min_size,
+                        &self.min_sizes,
                         bounds.size(),
                     );
 
