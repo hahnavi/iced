@@ -11,7 +11,7 @@ use crate::{Engine, Renderer};
 
 #[cfg(wayland_platform)]
 use super::wayland::get_wayland_device_ids;
-#[cfg(wayland_platform)]
+#[cfg(all(wayland_platform, feature = "x11"))]
 use super::x11::get_x11_device_ids;
 
 /// A window graphics backend for iced powered by `wgpu`.
@@ -59,7 +59,12 @@ impl Compositor {
         compatible_window: Option<W>,
         shell: Shell,
     ) -> Result<Self, Error> {
-        #[cfg(wayland_platform)]
+        #[cfg(all(wayland_platform, not(feature = "x11")))]
+        let ids = compatible_window
+            .as_ref()
+            .and_then(|window| get_wayland_device_ids(window));
+
+        #[cfg(all(wayland_platform, feature = "x11"))]
         let ids = compatible_window.as_ref().and_then(|window| {
             get_wayland_device_ids(window)
                 .or_else(|| get_x11_device_ids(window))

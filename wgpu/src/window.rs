@@ -2,7 +2,12 @@
 pub mod compositor;
 #[cfg(wayland_platform)]
 mod wayland;
-#[cfg(all(unix, not(target_os = "macos"), not(target_os = "redox")))]
+#[cfg(all(
+    feature = "x11",
+    unix,
+    not(target_os = "macos"),
+    not(target_os = "redox")
+))]
 mod x11;
 
 pub use compositor::Compositor;

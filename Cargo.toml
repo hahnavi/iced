@@ -279,7 +279,7 @@ tiny-skia = { version = "0.11", default-features = false, features = [
     "simd",
 ] }
 cctk = { git = "https://github.com/pop-os/cosmic-protocols", package = "cosmic-client-toolkit", rev = "c0cff4d" }
-softbuffer = { git = "https://github.com/pop-os/softbuffer", tag = "cosmic-4.0" }
+softbuffer = { git = "https://github.com/pop-os/softbuffer", tag = "cosmic-4.0", default-features = false }
 syntect = "5.2"
 tokio = "1.0"
 tracing = "0.1"
@@ -308,7 +308,7 @@ winapi = "0.3"
 window_clipboard = { git = "https://github.com/pop-os/window_clipboard.git", tag = "sctk-0.20" }
 dnd = { git = "https://github.com/pop-os/window_clipboard.git", tag = "sctk-0.20" }
 mime = { git = "https://github.com/pop-os/window_clipboard.git", tag = "sctk-0.20" }
-winit = { git = "https://github.com/pop-os/winit.git", rev = "9567503" }
+winit = { git = "https://github.com/pop-os/winit.git", rev = "9567503", default-features = false }
 winit-core = { git = "https://github.com/pop-os/winit.git", rev = "9567503" }
 cursor-icon = "1.1.0"
 

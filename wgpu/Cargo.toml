@@ -26,6 +26,7 @@ web-colors = ["iced_graphics/web-colors"]
 webgl = ["wgpu/webgl"]
 strict-assertions = []
 wayland = ["cctk"]
+x11 = ["dep:as-raw-xcb-connection", "dep:tiny-xlib", "dep:x11rb"]
 
 [dependencies]
 iced_debug.workspace = true
@@ -58,9 +59,9 @@ wayland-protocols.workspace = true
 wayland-backend = { version = "0.3.3", features = ["client_system"] }
 wayland-client = { version = "0.31.2" }
 wayland-sys = { version = "0.31.1", features = ["dlopen"] }
-as-raw-xcb-connection = "1.0.1"
-tiny-xlib = "0.2.3"
-x11rb = { version = "0.13.1", features = [
+as-raw-xcb-connection = { version = "1.0.1", optional = true }
+tiny-xlib = { version = "0.2.3", optional = true }
+x11rb = { version = "0.13.1", optional = true, features = [
     "allow-unsafe-code",
     "dl-libxcb",
     "dri3",
