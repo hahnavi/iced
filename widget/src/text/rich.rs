@@ -322,7 +322,8 @@ where
                     let size = span
                         .size
                         .or(self.size)
-                        .unwrap_or(renderer.default_size());
+                        .unwrap_or(renderer.default_size())
+                        * crate::core::text::text_scale();
 
                     let line_height = span
                         .line_height

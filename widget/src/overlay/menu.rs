@@ -394,7 +394,9 @@ where
         let text_size =
             self.text_size.unwrap_or_else(|| renderer.default_size());
 
-        let text_line_height = self.text_line_height.to_absolute(text_size);
+        let text_line_height =
+            self.text_line_height.to_absolute(text_size)
+                * crate::core::text::text_scale();
 
         let size = {
             let intrinsic = Size::new(
@@ -440,6 +442,7 @@ where
 
                     let option_height =
                         f32::from(self.text_line_height.to_absolute(text_size))
+                            * crate::core::text::text_scale()
                             + self.padding.y();
 
                     let new_hovered_option =
@@ -470,6 +473,7 @@ where
 
                     let option_height =
                         f32::from(self.text_line_height.to_absolute(text_size))
+                            * crate::core::text::text_scale()
                             + self.padding.y();
 
                     *self.hovered_option =
@@ -531,6 +535,7 @@ where
             self.text_size.unwrap_or_else(|| renderer.default_size());
         let option_height =
             f32::from(self.text_line_height.to_absolute(text_size))
+                * crate::core::text::text_scale()
                 + self.padding.y();
 
         let offset = viewport.y - bounds.y;

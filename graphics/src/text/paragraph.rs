@@ -78,12 +78,13 @@ impl core::text::Paragraph for Paragraph {
         let mut font_system =
             text::font_system().write().expect("Write font system");
 
+        let scale = text::text_scale();
+        let font_size = text.size.0 * scale;
+        let line_height = text.line_height.to_absolute(text.size).0 * scale;
+
         let mut buffer = cosmic_text::Buffer::new(
             font_system.raw(),
-            cosmic_text::Metrics::new(
-                text.size.into(),
-                text.line_height.to_absolute(text.size).into(),
-            ),
+            cosmic_text::Metrics::new(font_size, line_height),
         );
 
         buffer.set_size(Some(text.bounds.width), Some(text.bounds.height));
@@ -122,12 +123,13 @@ impl core::text::Paragraph for Paragraph {
         let mut font_system =
             text::font_system().write().expect("Write font system");
 
+        let scale = text::text_scale();
+        let font_size = text.size.0 * scale;
+        let line_height = text.line_height.to_absolute(text.size).0 * scale;
+
         let mut buffer = cosmic_text::Buffer::new(
             font_system.raw(),
-            cosmic_text::Metrics::new(
-                text.size.into(),
-                text.line_height.to_absolute(text.size).into(),
-            ),
+            cosmic_text::Metrics::new(font_size, line_height),
         );
 
         buffer.set_size(Some(text.bounds.width), Some(text.bounds.height));
@@ -144,11 +146,12 @@ impl core::text::Paragraph for Paragraph {
                         let size = span.size.unwrap_or(text.size);
 
                         attrs.metrics(cosmic_text::Metrics::new(
-                            size.into(),
+                            size.0 * scale,
                             span.line_height
                                 .unwrap_or(text.line_height)
                                 .to_absolute(size)
-                                .into(),
+                                .0
+                                * scale,
                         ))
                     }
                 };
@@ -217,9 +220,11 @@ impl core::text::Paragraph for Paragraph {
         let paragraph = self.internal();
         let metrics = paragraph.buffer.metrics();
 
+        let scale = text::text_scale();
+
         if paragraph.version != font_system.version
-            || metrics.font_size != text.size.0
-            || metrics.line_height != text.line_height.to_absolute(text.size).0
+            || metrics.font_size != text.size.0 * scale
+            || metrics.line_height != text.line_height.to_absolute(text.size).0 * scale
             || paragraph.font != text.font
             || paragraph.shaping != text.shaping
             || paragraph.wrapping != text.wrapping

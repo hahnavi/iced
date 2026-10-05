@@ -1366,7 +1366,8 @@ where
                         container(checkbox(*done).size(settings.text_size))
                             .center_y(
                                 text::LineHeight::default()
-                                    .to_absolute(settings.text_size),
+                                    .to_absolute(settings.text_size)
+                                    * crate::core::text::text_scale(),
                             ),
                     )
                 }

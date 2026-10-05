@@ -519,17 +519,14 @@ impl editor::Editor for Editor {
             }
 
             let metrics = buffer.metrics();
-            let new_line_height = new_line_height.to_absolute(new_size);
+            let scale = text::text_scale();
+            let font_size = new_size.0 * scale;
+            let line_height = new_line_height.to_absolute(new_size).0 * scale;
 
-            if new_size.0 != metrics.font_size
-                || new_line_height.0 != metrics.line_height
-            {
+            if font_size != metrics.font_size || line_height != metrics.line_height {
                 log::trace!("Updating `Metrics` of `Editor`...");
 
-                buffer.set_metrics(cosmic_text::Metrics::new(
-                    new_size.0,
-                    new_line_height.0,
-                ));
+                buffer.set_metrics(cosmic_text::Metrics::new(font_size, line_height));
             }
 
             let new_wrap = text::to_wrap(new_wrapping);

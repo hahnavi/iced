@@ -378,7 +378,7 @@ where
 
         let line_height = self.line_height.to_absolute(
             self.text_size.unwrap_or_else(|| renderer.default_size()),
-        );
+        ) * crate::core::text::text_scale();
 
         let position = cursor + translation;
 
@@ -1112,7 +1112,8 @@ where
                                     .to_absolute(self.text_size.unwrap_or_else(
                                         || renderer.default_size(),
                                     ))
-                                    .into(),
+                                    .0
+                                    * crate::core::text::text_scale(),
                             ),
                         );
 

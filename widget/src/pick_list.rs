@@ -385,7 +385,8 @@ where
             content: "",
             bounds: Size::new(
                 f32::INFINITY,
-                self.text_line_height.to_absolute(text_size).into(),
+                self.text_line_height.to_absolute(text_size).0
+                    * crate::core::text::text_scale(),
             ),
             size: text_size,
             line_height: self.text_line_height,
@@ -434,7 +435,8 @@ where
         let size = {
             let intrinsic = Size::new(
                 max_width + text_size.0 + self.padding.left,
-                f32::from(self.text_line_height.to_absolute(text_size)),
+                f32::from(self.text_line_height.to_absolute(text_size))
+                    * crate::core::text::text_scale(),
             );
 
             limits
@@ -682,7 +684,8 @@ where
                     font,
                     bounds: Size::new(
                         bounds.width,
-                        f32::from(line_height.to_absolute(size)),
+                        f32::from(line_height.to_absolute(size))
+                            * crate::core::text::text_scale(),
                     ),
                     align_x: text::Alignment::Right,
                     align_y: alignment::Vertical::Center,
@@ -713,7 +716,8 @@ where
                     font,
                     bounds: Size::new(
                         bounds.width - self.padding.x(),
-                        f32::from(self.text_line_height.to_absolute(text_size)),
+                        f32::from(self.text_line_height.to_absolute(text_size))
+                            * crate::core::text::text_scale(),
                     ),
                     align_x: text::Alignment::Default,
                     align_y: alignment::Vertical::Center,

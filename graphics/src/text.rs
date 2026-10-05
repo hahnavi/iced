@@ -127,6 +127,19 @@ impl Text {
 pub const FIRA_SANS_REGULAR: &[u8] =
     include_bytes!("../fonts/FiraSans-Regular.ttf").as_slice();
 
+pub fn text_scale() -> f32 {
+    crate::core::text::text_scale()
+}
+
+pub fn set_text_scale(scale: f32) {
+    if scale != crate::core::text::text_scale() {
+        crate::core::text::set_text_scale(scale);
+
+        let mut font_system = font_system().write().expect("Write font system");
+        font_system.version = Version(font_system.version.0 + 1);
+    }
+}
+
 /// Returns the global [`FontSystem`].
 pub fn font_system() -> &'static RwLock<FontSystem> {
     static FONT_SYSTEM: OnceLock<RwLock<FontSystem>> = OnceLock::new();

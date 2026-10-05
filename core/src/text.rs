@@ -14,6 +14,17 @@ use crate::{
 
 use std::borrow::Cow;
 use std::hash::{Hash, Hasher};
+use std::sync::atomic::{AtomicU32, Ordering};
+
+static TEXT_SCALE: AtomicU32 = AtomicU32::new(0x3f80_0000); // 1.0f32
+
+pub fn text_scale() -> f32 {
+    f32::from_bits(TEXT_SCALE.load(Ordering::Relaxed))
+}
+
+pub fn set_text_scale(scale: f32) {
+    TEXT_SCALE.store(scale.to_bits(), Ordering::Relaxed);
+}
 
 /// A paragraph.
 #[derive(Debug, Clone, Copy)]
