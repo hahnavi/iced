@@ -2,12 +2,13 @@ use crate::core::svg::{Data, Handle};
 use crate::core::{Color, Rectangle, Size};
 use crate::graphics::text;
 
+use fontdb::{Family as FontFamily, Source as FontSource};
 use resvg::usvg;
 use rustc_hash::{FxHashMap, FxHashSet};
 use tiny_skia::Transform;
 
 use std::cell::RefCell;
-use std::collections::hash_map;
+use std::collections::{HashSet, hash_map};
 use std::fs;
 use std::panic;
 use std::sync::Arc;
@@ -96,7 +97,39 @@ impl Cache {
         let version = font_system.version();
 
         if self.fontdb_version != Some(version) {
-            self.fontdb = Some(Arc::new(font_system.db().clone()));
+            let source_db = font_system.db();
+            let mut fontdb = usvg::fontdb::Database::new();
+            let mut loaded_files = HashSet::new();
+            let mut loaded_data = HashSet::new();
+
+            fontdb.set_serif_family(source_db.family_name(&FontFamily::Serif));
+            fontdb.set_sans_serif_family(source_db.family_name(&FontFamily::SansSerif));
+            fontdb.set_cursive_family(source_db.family_name(&FontFamily::Cursive));
+            fontdb.set_fantasy_family(source_db.family_name(&FontFamily::Fantasy));
+            fontdb.set_monospace_family(source_db.family_name(&FontFamily::Monospace));
+
+            for face in source_db.faces() {
+                let Some((source, _)) = source_db.face_source(face.id) else {
+                    continue;
+                };
+
+                match source {
+                    FontSource::File(path) => {
+                        if loaded_files.insert(path.clone()) {
+                            let _ = fontdb.load_font_file(path);
+                        }
+                    }
+                    FontSource::Binary(data) | FontSource::SharedFile(_, data) => {
+                        let source = Arc::as_ptr(&data) as *const () as usize;
+                        if loaded_data.insert(source) {
+                            let _ =
+                                fontdb.load_font_source(usvg::fontdb::Source::Binary(data));
+                        }
+                    }
+                }
+            }
+
+            self.fontdb = Some(Arc::new(fontdb));
             self.fontdb_version = Some(version);
         }
 

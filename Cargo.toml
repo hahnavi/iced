@@ -245,7 +245,8 @@ bytes = "1.6"
 cosmic-text = "0.19"
 cryoglyph = { git = "https://github.com/iced-rs/cryoglyph.git", rev = "e429a025df36ab8145708acb309080ae3deec17a" }
 dark-light = "1.0"
-resvg = "0.45"
+fontdb = "0.23"
+resvg = "0.48.1"
 web-sys = "0.3.69"
 guillotiere = "0.6"
 half = "2.2"
@@ -274,7 +275,7 @@ smol = "2"
 smol_str = "0.3"
 sysinfo = "0.33"
 thiserror = "2"
-tiny-skia = { version = "0.11", default-features = false, features = [
+tiny-skia = { version = "0.12", default-features = false, features = [
     "std",
     "simd",
 ] }

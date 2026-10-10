@@ -27,6 +27,7 @@ iced_graphics.workspace = true
 
 bytemuck.workspace = true
 cosmic-text.workspace = true
+fontdb.workspace = true
 kurbo.workspace = true
 log.workspace = true
 rustc-hash.workspace = true
