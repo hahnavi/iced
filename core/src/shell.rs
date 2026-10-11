@@ -241,6 +241,11 @@ impl<'a, Message> Shell<'a, Message> {
         self.invalidation
     }
 
+    /// Returns whether the layout of the user interface is invalid.
+    pub fn is_layout_invalid(&self) -> bool {
+        matches!(self.invalidation, Invalidation::Layout(_) | Invalidation::Widgets)
+    }
+
     /// Merges the current [`Shell`] with another one by applying the given
     /// function to the messages of the latter.
     ///

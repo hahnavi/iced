@@ -127,6 +127,14 @@ pub enum Sizing {
 }
 
 impl Length {
+    /// Encloses the [`Length`] with another [`Length`].
+    pub fn enclose(self, other: Length) -> Self {
+        match (self, other) {
+            (Length::Shrink, Length::Fill | Length::FillPortion(_)) => other,
+            _ => self,
+        }
+    }
+
     /// Returns a new [`Bounded`](Self::Bounded) length with the given minimum bounds.
     pub fn min(self, min: impl Into<Pixels>) -> Self {
         let min = min.into().0;

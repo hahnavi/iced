@@ -126,6 +126,18 @@ impl<W> Column<W> {
         self
     }
 
+    /// Adds an element to the [`Column`], if [`Some`].
+    pub fn push_maybe(self, child: Option<W>) -> Self
+    where
+        W: Meta,
+    {
+        if let Some(child) = child {
+            self.push(child)
+        } else {
+            self
+        }
+    }
+
     /// Extends the [`Column`] with the given children.
     pub fn extend(self, children: impl IntoIterator<Item = W>) -> Self
     where

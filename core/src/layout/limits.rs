@@ -59,6 +59,45 @@ impl Limits {
         )
     }
 
+    /// Returns the minimum [`Size`] of the [`Limits`].
+    pub fn min(&self) -> Size {
+        self.min
+    }
+
+    /// Returns the maximum [`Size`] of the [`Limits`].
+    pub fn max(&self) -> Size {
+        self.max
+    }
+
+    /// Returns the compression of the [`Limits`].
+    pub fn compression(&self) -> Size<bool> {
+        self.compression
+    }
+
+    /// Applies a minimum width constraint to the current [`Limits`].
+    pub fn min_width(mut self, min_width: f32) -> Limits {
+        self.min.width = self.min.width.max(min_width).min(self.max.width);
+        self
+    }
+
+    /// Applies a maximum width constraint to the current [`Limits`].
+    pub fn max_width(mut self, max_width: f32) -> Limits {
+        self.max.width = self.max.width.min(max_width).max(self.min.width);
+        self
+    }
+
+    /// Applies a minimum height constraint to the current [`Limits`].
+    pub fn min_height(mut self, min_height: f32) -> Limits {
+        self.min.height = self.min.height.max(min_height).min(self.max.height);
+        self
+    }
+
+    /// Applies a maximum height constraint to the current [`Limits`].
+    pub fn max_height(mut self, max_height: f32) -> Limits {
+        self.max.height = self.max.height.min(max_height).max(self.min.height);
+        self
+    }
+
     /// Applies a width constraint to the current [`Limits`].
     pub fn width(mut self, width: impl Into<Length>) -> Limits {
         match width.into() {

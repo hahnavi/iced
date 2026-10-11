@@ -411,9 +411,19 @@ pub trait Renderer: crate::Renderer {
         self.settings().font
     }
 
+    /// Returns the default [`Font`].
+    fn default_font(&self) -> Font {
+        self.font()
+    }
+
     /// Returns the default size of [`Text`].
     fn text_size(&self) -> Pixels {
         self.settings().text_size
+    }
+
+    /// Returns the default size of [`Text`].
+    fn default_size(&self) -> Pixels {
+        self.text_size()
     }
 
     /// Returns the default line height of [`Text`].

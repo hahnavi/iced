@@ -31,3 +31,8 @@ pub enum Interaction {
     ZoomIn,
     ZoomOut,
 }
+
+impl Interaction {
+    /// No interaction.
+    pub const NONE: Self = Self::None;
+}
