@@ -665,7 +665,9 @@ pub trait Catalog: Sized {
     fn style(&self, item: &Self::Class<'_>) -> Style;
 
     /// The global selection [`Color`].
-    fn selection(&self) -> Color;
+    fn selection(&self) -> Color {
+        Color::TRANSPARENT
+    }
 }
 
 /// A styling function for a [`Text`].

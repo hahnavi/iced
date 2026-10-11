@@ -497,7 +497,9 @@ pub trait Catalog {
     fn style(&self, class: &Self::Class<'_>, status: Status) -> Style;
 
     /// The global selection [`Color`].
-    fn selection(&self) -> Color;
+    fn selection(&self) -> Color {
+        Color::TRANSPARENT
+    }
 }
 
 /// A styling function for a [`Radio`].
