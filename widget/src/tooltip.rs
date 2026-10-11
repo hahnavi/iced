@@ -96,6 +96,11 @@ where
         self
     }
 
+    /// Sets the padding of the [`Tooltip`].
+    pub fn padding(self, _padding: impl Into<crate::core::Padding>) -> Self {
+        self
+    }
+
     /// Sets the delay before the [`Tooltip`] is shown.
     ///
     /// Set to [`Duration::ZERO`] to be shown immediately.

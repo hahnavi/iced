@@ -542,3 +542,18 @@ fn update<Message: Clone, W>(
         }
     }
 }
+
+use crate::core::Element;
+
+impl<'a, Message, Theme, Renderer, W> From<MouseArea<'a, Message, W>>
+    for Element<'a, Message, Theme, Renderer>
+where
+    Message: 'a + Clone,
+    Theme: 'a,
+    Renderer: 'a + renderer::Renderer,
+    W: Widget<Message, Theme, Renderer> + 'a,
+{
+    fn from(mouse_area: MouseArea<'a, Message, W>) -> Self {
+        Self::new(mouse_area)
+    }
+}
