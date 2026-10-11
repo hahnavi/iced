@@ -406,3 +406,15 @@ pub fn default(theme: &Theme) -> Style {
         background: palette.background,
     }
 }
+
+
+use crate::core::Element;
+
+impl<'a, Message, Theme> From<QRCode<'a, Theme>> for Element<'a, Message, Theme, Renderer>
+where
+    Theme: Catalog + 'a,
+{
+    fn from(qr_code: QRCode<'a, Theme>) -> Self {
+        Element::new(qr_code)
+    }
+}

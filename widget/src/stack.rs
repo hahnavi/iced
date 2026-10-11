@@ -367,3 +367,18 @@ where
         )
     }
 }
+
+
+use crate::core::Element;
+
+impl<'a, W, Message, Theme, Renderer> From<Stack<W>> for Element<'a, Message, Theme, Renderer>
+where
+    W: Widget<Message, Theme, Renderer> + 'a,
+    Message: 'a,
+    Theme: 'a,
+    Renderer: crate::core::Renderer + 'a,
+{
+    fn from(stack: Stack<W>) -> Self {
+        Element::new(stack)
+    }
+}

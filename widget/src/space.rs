@@ -88,3 +88,16 @@ where
     ) {
     }
 }
+
+
+use crate::core::Element;
+
+impl<'a, Message, Theme, Renderer> From<Space> for Element<'a, Message, Theme, Renderer>
+where
+    Renderer: crate::core::Renderer,
+    Message: 'a,
+{
+    fn from(space: Space) -> Element<'a, Message, Theme, Renderer> {
+        Element::new(space)
+    }
+}

@@ -490,3 +490,17 @@ where
         self.id = id;
     }
 }
+
+
+use crate::core::Element;
+
+impl<'a, Message, Theme, Renderer, Handle> From<Image<'a, Handle>>
+    for Element<'a, Message, Theme, Renderer>
+where
+    Renderer: image::Renderer<Handle = Handle>,
+    Handle: Clone + 'a,
+{
+    fn from(image: Image<'a, Handle>) -> Element<'a, Message, Theme, Renderer> {
+        Element::new(image)
+    }
+}

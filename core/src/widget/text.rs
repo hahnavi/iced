@@ -846,3 +846,24 @@ pub trait HasSelectableText {
         None
     }
 }
+
+
+impl<'a, Message, Theme, Renderer> From<Text<'a, Theme>> for crate::Element<'a, Message, Theme, Renderer>
+where
+    Theme: Catalog + 'a,
+    Renderer: text::Renderer + 'a,
+{
+    fn from(text: Text<'a, Theme>) -> crate::Element<'a, Message, Theme, Renderer> {
+        crate::Element::new(text)
+    }
+}
+
+impl<'a, Message, Theme, Renderer> From<&'a str> for crate::Element<'a, Message, Theme, Renderer>
+where
+    Theme: Catalog + 'a,
+    Renderer: text::Renderer + 'a,
+{
+    fn from(content: &'a str) -> Self {
+        Text::from(content).into()
+    }
+}

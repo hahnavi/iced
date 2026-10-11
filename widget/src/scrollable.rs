@@ -4269,3 +4269,21 @@ mod tests {
         assert!((offset_y(&state, content_bounds) - (before_direct_scroll + 10.0)).abs() < 0.001);
     }
 }
+
+
+use crate::core::Element;
+
+impl<'a, Message, W, Theme, Renderer> From<Scrollable<'a, Message, W, Theme>>
+    for Element<'a, Message, Theme, Renderer>
+where
+    Message: 'a,
+    Theme: 'a + Catalog,
+    Renderer: 'a + text::Renderer,
+    W: Widget<Message, Theme, Renderer> + 'a,
+{
+    fn from(
+        scrollable: Scrollable<'a, Message, W, Theme>,
+    ) -> Element<'a, Message, Theme, Renderer> {
+        Element::new(scrollable)
+    }
+}

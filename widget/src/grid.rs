@@ -376,3 +376,18 @@ impl From<Length> for Sizing {
 pub fn aspect_ratio(width: impl Into<Pixels>, height: impl Into<Pixels>) -> Sizing {
     Sizing::AspectRatio(width.into().0 / height.into().0)
 }
+
+
+use crate::core::Element;
+
+impl<'a, W, Message, Theme, Renderer> From<Grid<W>> for Element<'a, Message, Theme, Renderer>
+where
+    W: Widget<Message, Theme, Renderer> + 'a,
+    Message: 'a,
+    Theme: 'a,
+    Renderer: crate::core::Renderer + 'a,
+{
+    fn from(grid: Grid<W>) -> Self {
+        Element::new(grid)
+    }
+}

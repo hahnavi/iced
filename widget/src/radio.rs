@@ -542,3 +542,18 @@ pub fn default(theme: &Theme, status: Status) -> Style {
         },
     }
 }
+
+
+use crate::core::Element;
+
+impl<'a, Message, Theme, Renderer> From<Radio<'a, Message, Theme>>
+    for Element<'a, Message, Theme, Renderer>
+where
+    Message: 'a + Clone,
+    Theme: Catalog + 'a,
+    Renderer: text::Renderer + 'a,
+{
+    fn from(radio: Radio<'a, Message, Theme>) -> Self {
+        Element::new(radio)
+    }
+}

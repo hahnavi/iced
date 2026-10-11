@@ -785,3 +785,18 @@ pub fn default(theme: &Theme, status: Status) -> Style {
         text_color: None,
     }
 }
+
+
+use crate::core::Element;
+
+impl<'a, Message, Theme, Renderer> From<Toggler<'a, Message, Theme>>
+    for Element<'a, Message, Theme, Renderer>
+where
+    Message: 'a,
+    Theme: Catalog + 'a,
+    Renderer: text::Renderer + 'a,
+{
+    fn from(toggler: Toggler<'a, Message, Theme>) -> Element<'a, Message, Theme, Renderer> {
+        Element::new(toggler)
+    }
+}

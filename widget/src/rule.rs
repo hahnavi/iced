@@ -340,3 +340,17 @@ pub fn weak(theme: &Theme) -> Style {
         snap: true,
     }
 }
+
+
+use crate::core::Element;
+
+impl<'a, Message, Theme, Renderer> From<Rule<'a, Theme>> for Element<'a, Message, Theme, Renderer>
+where
+    Message: 'a,
+    Theme: 'a + Catalog,
+    Renderer: 'a + crate::core::Renderer,
+{
+    fn from(rule: Rule<'a, Theme>) -> Element<'a, Message, Theme, Renderer> {
+        Element::new(rule)
+    }
+}

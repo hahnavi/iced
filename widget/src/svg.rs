@@ -448,3 +448,16 @@ impl<Theme> From<Style> for StyleFn<'_, Theme> {
         Box::new(move |_theme, _status| style)
     }
 }
+
+
+use crate::core::Element;
+
+impl<'a, Message, Theme, Renderer> From<Svg<'a, Theme>> for Element<'a, Message, Theme, Renderer>
+where
+    Theme: Catalog + 'a,
+    Renderer: svg::Renderer + 'a,
+{
+    fn from(icon: Svg<'a, Theme>) -> Element<'a, Message, Theme, Renderer> {
+        Element::new(icon)
+    }
+}

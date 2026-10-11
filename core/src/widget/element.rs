@@ -166,3 +166,15 @@ impl<'a, Message, Theme, Renderer> Widget<Message, Theme, Renderer>
             .drag_destinations(state, layout, renderer, dnd_rectangles);
     }
 }
+
+
+impl<'a, T, Message, Theme, Renderer> From<Option<T>> for Element<'a, Message, Theme, Renderer>
+where
+    T: Into<Self>,
+{
+    fn from(value: Option<T>) -> Self {
+        value
+            .map(T::into)
+            .unwrap_or_else(|| Element::new(widget::Void))
+    }
+}

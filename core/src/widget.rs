@@ -602,3 +602,19 @@ where
         widget.overlay(tree, layout, renderer, viewport, translation, window)
     }
 }
+
+
+impl<'a, W, F, A, Message, Theme, Renderer> From<Map<W, F, A>>
+    for Element<'a, Message, Theme, Renderer>
+where
+    F: Fn(A) -> Message + 'a,
+    W: Widget<A, Theme, Renderer> + 'a,
+    A: 'static,
+    Message: 'static,
+    Theme: 'static,
+    Renderer: crate::Renderer + 'static,
+{
+    fn from(map: Map<W, F, A>) -> Self {
+        map._boxed()
+    }
+}

@@ -924,3 +924,19 @@ pub fn default(theme: &Theme, status: Status) -> Style {
         },
     }
 }
+
+
+use crate::core::Element;
+
+impl<'a, T, Message, Theme, Renderer> From<Slider<'a, T, Message, Theme>>
+    for Element<'a, Message, Theme, Renderer>
+where
+    T: Copy + num_traits::AsPrimitive<f64> + num_traits::FromPrimitive + 'a,
+    Message: Clone + 'a,
+    Theme: Catalog + 'a,
+    Renderer: crate::core::Renderer + 'a,
+{
+    fn from(slider: Slider<'a, T, Message, Theme>) -> Element<'a, Message, Theme, Renderer> {
+        Element::new(slider)
+    }
+}

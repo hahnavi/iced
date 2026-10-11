@@ -619,3 +619,18 @@ pub fn default(theme: &Theme, status: Status) -> Style {
         },
     }
 }
+
+
+use crate::core::Element;
+
+impl<'a, Message, Theme, Renderer> From<TextInput<'a, Message, Theme>>
+    for Element<'a, Message, Theme, Renderer>
+where
+    Message: Clone + 'a,
+    Theme: Catalog + 'a,
+    Renderer: text::Renderer + 'static,
+{
+    fn from(text_input: TextInput<'a, Message, Theme>) -> Element<'a, Message, Theme, Renderer> {
+        Element::new(text_input)
+    }
+}

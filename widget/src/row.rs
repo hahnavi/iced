@@ -588,3 +588,18 @@ where
     Row::with_children(children)
 }
 
+
+
+use crate::core::Element;
+
+impl<'a, W, Message, Theme, Renderer> From<Row<W>> for Element<'a, Message, Theme, Renderer>
+where
+    W: Widget<Message, Theme, Renderer> + 'a,
+    Message: 'a,
+    Theme: 'a,
+    Renderer: crate::core::Renderer + 'a,
+{
+    fn from(row: Row<W>) -> Self {
+        Element::new(row)
+    }
+}

@@ -726,3 +726,19 @@ fn style(pair: theme::palette::Pair) -> Style {
         ..Style::default()
     }
 }
+
+
+use crate::core::Element;
+
+impl<'a, W, Message, Theme, Renderer> From<Container<'a, W, Theme>>
+    for Element<'a, Message, Theme, Renderer>
+where
+    Message: 'a,
+    Theme: Catalog + 'a,
+    Renderer: crate::core::Renderer + 'a,
+    W: Widget<Message, Theme, Renderer> + 'a,
+{
+    fn from(container: Container<'a, W, Theme>) -> Element<'a, Message, Theme, Renderer> {
+        Element::new(container)
+    }
+}

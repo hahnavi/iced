@@ -513,3 +513,20 @@ where
         });
     }
 }
+
+
+use crate::core::Element;
+
+impl<'a, W, V, Message, Theme, Renderer> From<Tooltip<'a, W, V, Theme>>
+    for Element<'a, Message, Theme, Renderer>
+where
+    Message: 'a,
+    Theme: container::Catalog + 'a,
+    Renderer: text::Renderer + 'a,
+    W: Widget<Message, Theme, Renderer> + 'a,
+    V: Widget<Message, Theme, Renderer> + 'a,
+{
+    fn from(tooltip: Tooltip<'a, W, V, Theme>) -> Element<'a, Message, Theme, Renderer> {
+        Element::new(tooltip)
+    }
+}

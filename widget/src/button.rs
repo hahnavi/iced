@@ -955,3 +955,19 @@ impl operation::Focusable for State {
         self.is_focused = false;
     }
 }
+
+
+use crate::core::Element;
+
+impl<'a, Message, W, Theme, Renderer> From<Button<'a, Message, W, Theme>>
+    for Element<'a, Message, Theme, Renderer>
+where
+    Message: 'a + Clone,
+    Theme: Catalog + 'a,
+    Renderer: crate::core::Renderer + 'a,
+    W: Widget<Message, Theme, Renderer> + 'a,
+{
+    fn from(button: Button<'a, Message, W, Theme>) -> Self {
+        Element::new(button)
+    }
+}

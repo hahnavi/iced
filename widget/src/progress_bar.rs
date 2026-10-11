@@ -307,3 +307,17 @@ fn styled(background: impl Into<Background>, bar: impl Into<Background>) -> Styl
         border: border::rounded(2),
     }
 }
+
+
+use crate::core::Element;
+
+impl<'a, Message, Theme, Renderer> From<ProgressBar<'a, Theme>>
+    for Element<'a, Message, Theme, Renderer>
+where
+    Theme: Catalog + 'a,
+    Renderer: crate::core::Renderer + 'a,
+{
+    fn from(progress_bar: ProgressBar<'a, Theme>) -> Self {
+        Element::new(progress_bar)
+    }
+}
