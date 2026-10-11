@@ -178,3 +178,18 @@ where
             .unwrap_or_else(|| Element::new(widget::Void))
     }
 }
+
+
+
+
+impl<'a, Message, Theme: 'static, Renderer> Element<'a, Message, Theme, Renderer> {
+    /// Applies a transformation to the produced message of the [].
+    pub fn map<B>(self, f: impl Fn(Message) -> B + 'a) -> Element<'a, B, Theme, Renderer>
+    where
+        Message: 'a,
+        Renderer: crate::Renderer + 'a,
+        B: 'static,
+    {
+        Element::new(self._map(f))
+    }
+}
