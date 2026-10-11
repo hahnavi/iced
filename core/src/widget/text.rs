@@ -425,10 +425,13 @@ where
     }
 }
 
+/// The internal state of a [`Text`] widget.
 #[derive(Default)]
-struct State<P: Paragraph> {
-    paragraph: paragraph::Plain<P>,
-    is_hovered: bool,
+pub struct State<P: Paragraph> {
+    /// The paragraph of the text.
+    pub paragraph: paragraph::Plain<P>,
+    /// Whether the text is hovered.
+    pub is_hovered: bool,
 }
 
 /// The state of a widget with text, operated on by [`super::Operation::text`].

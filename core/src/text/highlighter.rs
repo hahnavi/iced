@@ -2,6 +2,8 @@
 use crate::Color;
 use crate::font;
 
+pub use crate::text::parser::PlainText;
+
 /// A type that describes how to highlight an `Input`
 /// with some [`Style`].
 pub trait Highlighter<Input, Theme = crate::Theme> {

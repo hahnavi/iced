@@ -12,7 +12,7 @@ pub mod widget {
     pub use crate::runtime::task::widget as operate;
 }
 
-pub use crate::core::clipboard;
+pub use crate::core::clipboard::{self, Clipboard};
 pub use crate::core::image;
 pub use crate::core::input_method::{self, InputMethod};
 pub use crate::core::layout::{self, Layout};

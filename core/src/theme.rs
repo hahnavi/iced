@@ -242,7 +242,14 @@ pub trait Base: 'static {
     ///
     /// This may be used by the runtime to recreate a [`Theme`] for
     /// debugging purposes; like displaying performance metrics or devtools.
-    fn seed(&self) -> Option<palette::Seed>;
+    fn seed(&self) -> Option<palette::Seed> {
+        None
+    }
+
+    /// Returns the color [`Palette`] of the theme.
+    fn palette(&self) -> Option<Palette> {
+        None
+    }
 
     /// Returns the unique name of the theme.
     ///

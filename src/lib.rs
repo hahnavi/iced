@@ -601,6 +601,7 @@ pub mod clipboard {
 
 /// Widget identifiers.
 pub mod id {
+    pub use crate::core::id::*;
     pub use crate::core::widget::Id;
 }
 

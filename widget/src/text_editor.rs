@@ -52,9 +52,11 @@ use std::fmt;
 use std::ops::DerefMut;
 
 pub use text::Highlighter;
+pub use text::Position;
 pub use text::editor::{
     Action, Binding, Cursor, Edit, KeyPress, Line, LineEnding, Motion, Selection,
 };
+pub use widget::Id;
 
 /// A multi-line text input.
 ///
@@ -309,11 +311,16 @@ where
     }
 }
 
-struct State<Parser: text::Parser> {
-    editor: editor::State,
-    parser: RefCell<Parser>,
-    parser_settings: Parser::Settings,
-    last_theme: RefCell<Option<String>>,
+/// The state of a [`TextEditor`].
+pub struct State<Parser: text::Parser> {
+    /// The editor state.
+    pub editor: editor::State,
+    /// The parser.
+    pub parser: RefCell<Parser>,
+    /// The settings of the parser.
+    pub parser_settings: Parser::Settings,
+    /// The last theme.
+    pub last_theme: RefCell<Option<String>>,
 }
 
 impl<Parser, Message, Theme, Renderer> widget::Meta
