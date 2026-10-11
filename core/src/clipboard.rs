@@ -211,6 +211,8 @@ pub struct Requests {
     pub write: Option<Content>,
     /// Drag-and-drop source requests for the runtime to execute.
     pub dnd: Vec<DndStart>,
+    /// Requested logical window size.
+    pub requested_logical_size: Option<(f32, f32)>,
 }
 
 impl std::fmt::Debug for Requests {
@@ -230,6 +232,7 @@ impl Requests {
             reads: Vec::new(),
             write: None,
             dnd: Vec::new(),
+            requested_logical_size: None,
         }
     }
 
@@ -238,6 +241,9 @@ impl Requests {
         self.reads.append(&mut other.reads);
         self.write = other.write.take().or(self.write.take());
         self.dnd.append(&mut other.dnd);
+        if other.requested_logical_size.is_some() {
+            self.requested_logical_size = other.requested_logical_size;
+        }
     }
 }
 

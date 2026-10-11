@@ -167,6 +167,11 @@ impl<'a, Message> Shell<'a, Message> {
         &mut self.clipboard
     }
 
+    /// Requests the runtime to resize the window to the given logical dimensions.
+    pub fn request_logical_window_size(&mut self, width: f32, height: f32) {
+        self.clipboard.requested_logical_size = Some((width, height));
+    }
+
     /// Starts a drag-and-drop operation from the current widget.
     pub fn start_dnd(
         &mut self,

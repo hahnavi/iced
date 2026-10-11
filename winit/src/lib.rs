@@ -2762,6 +2762,10 @@ fn run_clipboard<Message: Send + 'static>(
         });
     }
 
+        if let Some((width, height)) = requests.requested_logical_size {
+        clipboard.request_logical_window_size(width, height);
+    }
+
     for request in requests.dnd {
         clipboard.start_dnd(
             request.internal,
