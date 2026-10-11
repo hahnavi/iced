@@ -1,32 +1,31 @@
 //! Store internal widget state in a state tree to ensure continuity.
-use crate::Widget;
-use crate::id::{Id, Internal};
-use std::any::{self, Any};
-use std::borrow::{Borrow, BorrowMut, Cow};
-use std::collections::{HashMap, VecDeque};
-use std::hash::Hash;
-use std::{fmt, mem};
+use crate::widget::Id;
+use crate::{Size, Vector, Widget};
 
-thread_local! {
-    /// A map of named widget states.
-pub static NAMED: std::cell::RefCell<HashMap<Cow<'static, str>, (State, Vec<(usize, Tree)>)>> = std::cell::RefCell::new(HashMap::new());
-}
+use std::any::{self, Any};
+use std::fmt;
 
 /// A persistent state widget tree.
 ///
 /// A [`Tree`] is normally associated with a specific widget in the widget tree.
 #[derive(Debug)]
 pub struct Tree {
+    /// The identifier of the widget, if it has one.
+    pub id: Option<Id>,
+
     /// The tag of the [`Tree`].
     pub tag: Tag,
-
-    /// the Id of the [`Tree`]
-    pub id: Option<Id>,
 
     /// The [`State`] of the [`Tree`].
     pub state: State,
 
-    /// The children of the root widget of the [`Tree`].
+    /// The translation of the widget, relative to its parent.
+    pub translation: Vector,
+
+    /// The size of the widget.
+    pub size: Size,
+
+    /// The children of the widget.
     pub children: Vec<Tree>,
 }
 
@@ -37,117 +36,28 @@ impl Tree {
             id: None,
             tag: Tag::stateless(),
             state: State::None,
+            translation: Vector::ZERO,
+            size: Size::ZERO,
             children: Vec::new(),
         }
     }
 
     /// Creates a new [`Tree`] for the provided [`Widget`].
-    pub fn new<'a, Message, Theme, Renderer>(
-        widget: impl Borrow<dyn Widget<Message, Theme, Renderer> + 'a>,
-    ) -> Self
+    pub fn new<Message, Theme, Renderer>(widget: &impl Widget<Message, Theme, Renderer>) -> Self
     where
         Renderer: crate::Renderer,
     {
-        let widget = widget.borrow();
-
         Self {
             id: widget.id(),
             tag: widget.tag(),
             state: widget.state(),
-            children: widget.children(),
+            translation: Vector::ZERO,
+            size: Size::ZERO,
+            children: Vec::new(),
         }
     }
 
-    /// Takes all named widgets from the tree.
-    pub fn take_all_named(
-        &mut self,
-    ) -> HashMap<Cow<'static, str>, (State, Vec<(usize, Tree)>)> {
-        let mut named = HashMap::new();
-        struct Visit {
-            parent: Cow<'static, str>,
-            index: usize,
-            visited: bool,
-        }
-        // tree traversal to find all named widgets
-        // and keep their state and children
-        let mut stack = vec![(self, None)];
-        while let Some((tree, visit)) = stack.pop() {
-            if let Some(Id(Internal::Custom(_, n))) = tree.id.clone() {
-                let state = mem::replace(&mut tree.state, State::None);
-                let children_count = tree.children.len();
-                let children =
-                    tree.children.iter_mut().enumerate().rev().map(|(i, c)| {
-                        if matches!(c.id, Some(Id(Internal::Custom(_, _)))) {
-                            (c, None)
-                        } else {
-                            (
-                                c,
-                                Some(Visit {
-                                    index: i,
-                                    parent: n.clone(),
-                                    visited: false,
-                                }),
-                            )
-                        }
-                    });
-                _ = named.insert(
-                    n.clone(),
-                    (state, Vec::with_capacity(children_count)),
-                );
-                stack.extend(children);
-            } else if let Some(visit) = visit {
-                if visit.visited {
-                    named.get_mut(&visit.parent).unwrap().1.push((
-                        visit.index,
-                        mem::replace(
-                            tree,
-                            Tree {
-                                id: tree.id.clone(),
-                                tag: tree.tag,
-                                ..Tree::empty()
-                            },
-                        ),
-                    ));
-                } else {
-                    let ptr = tree as *mut Tree;
-
-                    stack.push((
-                        // TODO remove this unsafe block
-                        #[allow(unsafe_code)]
-                        // SAFETY: when the reference is finally accessed, all the children references will have been processed first.
-                        unsafe {
-                            ptr.as_mut().unwrap()
-                        },
-                        Some(Visit {
-                            visited: true,
-                            ..visit
-                        }),
-                    ));
-                    stack.extend(tree.children.iter_mut().map(|c| (c, None)));
-                }
-            } else {
-                stack.extend(tree.children.iter_mut().map(|s| (s, None)));
-            }
-        }
-
-        named
-    }
-
-    /// Finds a widget state in the tree by its id.
-    pub fn find<'a>(&'a self, id: &Id) -> Option<&'a Tree> {
-        if self.id == Some(id.clone()) {
-            return Some(self);
-        }
-
-        for child in self.children.iter() {
-            if let Some(tree) = child.find(id) {
-                return Some(tree);
-            }
-        }
-
-        None
-    }
-    /// Reconciliates the current tree with the provided [`Widget`].
+    /// Reconciles the current tree with the provided [`Widget`].
     ///
     /// If the tag of the [`Widget`] matches the tag of the [`Tree`], then the
     /// [`Widget`] proceeds with the reconciliation (i.e. [`Widget::diff`] is called).
@@ -155,126 +65,37 @@ impl Tree {
     /// Otherwise, the whole [`Tree`] is recreated.
     ///
     /// [`Widget::diff`]: crate::Widget::diff
-    pub fn diff<'a, Message, Theme, Renderer>(
+    pub fn diff<Message, Theme, Renderer>(
         &mut self,
-        mut new: impl BorrowMut<dyn Widget<Message, Theme, Renderer> + 'a>,
+        new: &mut impl Widget<Message, Theme, Renderer>,
     ) where
         Renderer: crate::Renderer,
     {
-        let borrowed: &mut dyn Widget<Message, Theme, Renderer> =
-            new.borrow_mut();
-
-        let mut tag_match = self.tag == borrowed.tag();
-
-        if tag_match {
-            if let Some(Id(Internal::Custom(_, n))) = borrowed.id() {
-                if let Some((mut state, children)) = NAMED
-                    .with(|named| named.borrow_mut().remove(&n))
-                    .or_else(|| {
-                        //check self.id
-                        if let Some(Id(Internal::Custom(_, ref name))) = self.id
-                        {
-                            if name == &n {
-                                Some((
-                                    mem::replace(&mut self.state, State::None),
-                                    self.children
-                                        .iter_mut()
-                                        .map(|s| {
-                                            // take the data
-                                            mem::replace(
-                                                s,
-                                                Tree {
-                                                    id: s.id.clone(),
-                                                    tag: s.tag,
-                                                    ..Tree::empty()
-                                                },
-                                            )
-                                        })
-                                        .enumerate()
-                                        .collect(),
-                                ))
-                            } else {
-                                None
-                            }
-                        } else {
-                            None
-                        }
-                    })
-                {
-                    std::mem::swap(&mut self.state, &mut state);
-                    let widget_children = borrowed.children();
-                    if !tag_match {
-                        self.children = widget_children;
-                    } else {
-                        for (old_i, mut old) in children {
-                            let Some(my_state) = self.children.get_mut(old_i)
-                            else {
-                                continue;
-                            };
-                            if my_state.tag != old.tag || {
-                                !match (&old.id, &my_state.id) {
-                                    (
-                                        Some(Id(Internal::Custom(_, old_name))),
-                                        Some(Id(Internal::Custom(_, my_name))),
-                                    ) => old_name == my_name,
-                                    (
-                                        Some(Id(Internal::Set(a))),
-                                        Some(Id(Internal::Set(b))),
-                                    ) => a.len() == b.len(),
-                                    (
-                                        Some(Id(Internal::Unique(_))),
-                                        Some(Id(Internal::Unique(_))),
-                                    ) => true,
-                                    (None, None) => true,
-                                    _ => false,
-                                }
-                            } {
-                                continue;
-                            }
-
-                            mem::swap(my_state, &mut old);
-                        }
-                    }
-                } else {
-                    tag_match = false;
-                }
-            } else {
-                if let Some(id) = self.id.clone() {
-                    borrowed.set_id(id);
-                }
-            }
+        if self.tag != new.tag() {
+            *self = Self::new(new);
         }
-        if tag_match {
-            borrowed.diff(self);
-        } else {
-            *self = Self::new(borrowed);
-            let borrowed = new.borrow_mut();
-            borrowed.diff(self);
+
+        self.id = new.id();
+        new.diff(self);
+    }
+
+    /// Finds a widget tree by its identifier.
+    pub fn find(&self, id: &Id) -> Option<&Tree> {
+        if self.id.as_ref() == Some(id) {
+            return Some(self);
         }
+
+        self.children.iter().find_map(|child| child.find(id))
     }
 
     /// Reconciles the children of the tree with the provided list of widgets.
-    pub fn diff_children<'a, Message, Theme, Renderer>(
+    pub fn diff_children<Message, Theme, Renderer>(
         &mut self,
-        new_children: &mut [impl BorrowMut<
-            dyn Widget<Message, Theme, Renderer> + 'a,
-        >],
+        new_children: &mut [impl Widget<Message, Theme, Renderer>],
     ) where
         Renderer: crate::Renderer,
     {
-        self.diff_children_custom(
-            new_children,
-            new_children.iter().map(|c| c.borrow().id()).collect(),
-            |tree, widget| {
-                let borrowed: &mut dyn Widget<_, _, _> = widget.borrow_mut();
-
-                tree.diff(borrowed);
-            },
-            |widget| {
-                let borrowed: &dyn Widget<_, _, _> = widget.borrow();
-                Self::new(borrowed)
-            },
-        );
+        diff_children(&mut self.children, new_children);
     }
 
     /// Reconciles the children of the tree with the provided list of widgets using custom
@@ -282,79 +103,43 @@ impl Tree {
     pub fn diff_children_custom<T>(
         &mut self,
         new_children: &mut [T],
-        new_ids: Vec<Option<Id>>,
         diff: impl Fn(&mut Tree, &mut T),
         new_state: impl Fn(&T) -> Self,
     ) {
-        if self.children.len() > new_children.len() {
-            self.children.truncate(new_children.len());
-        }
+        diff_children_custom(&mut self.children, new_children, diff, new_state);
+    }
+}
 
-        let children_len = self.children.len();
-        let (mut id_map, mut id_list): (
-            HashMap<String, &mut Tree>,
-            VecDeque<(usize, &mut Tree)>,
-        ) = self.children.iter_mut().enumerate().fold(
-            (HashMap::new(), VecDeque::with_capacity(children_len)),
-            |(mut id_map, mut id_list), (i, c)| {
-                if let Some(id) = c.id.as_ref() {
-                    if let Internal::Custom(_, ref name) = id.0 {
-                        let _ = id_map.insert(name.to_string(), c);
-                    } else {
-                        id_list.push_back((i, c));
-                    }
-                } else {
-                    id_list.push_back((i, c));
-                }
-                (id_map, id_list)
-            },
-        );
+/// Reconciles the children of the tree with the provided list of widgets.
+pub fn diff_children<Message, Theme, Renderer>(
+    old_children: &mut Vec<Tree>,
+    new_children: &mut [impl Widget<Message, Theme, Renderer>],
+) where
+    Renderer: crate::Renderer,
+{
+    diff_children_custom(old_children, new_children, Tree::diff, |widget| {
+        Tree::new(widget)
+    });
+}
 
-        let mut new_trees: Vec<(Tree, usize)> =
-            Vec::with_capacity(new_children.len());
-        for (i, (new, new_id)) in
-            new_children.iter_mut().zip(new_ids.iter()).enumerate()
-        {
-            let child_state = if let Some(c) = new_id.as_ref().and_then(|id| {
-                if let Internal::Custom(_, ref name) = id.0 {
-                    id_map.remove(name.as_ref())
-                } else {
-                    None
-                }
-            }) {
-                c
-            } else if let Some(i) = {
-                let mut found = None;
-                for c_i in 0..id_list.len() {
-                    if id_list[c_i].0 == i {
-                        found = Some(c_i);
-                        break;
-                    }
-                    if i < c_i {
-                        break;
-                    }
-                }
-                found
-            } {
-                let c = id_list.remove(i).unwrap().1;
-                c
-            } else {
-                let mut my_new_state = new_state(new);
-                diff(&mut my_new_state, new);
-                new_trees.push((my_new_state, i));
-                continue;
-            };
+/// Reconciles the children of the tree with the provided list of widgets using custom
+/// logic both for diffing and creating new widget state.
+pub fn diff_children_custom<T>(
+    old_children: &mut Vec<Tree>,
+    new_children: &mut [T],
+    diff: impl Fn(&mut Tree, &mut T),
+    new_state: impl Fn(&T) -> Tree,
+) {
+    if old_children.len() > new_children.len() {
+        old_children.truncate(new_children.len());
+    }
 
-            diff(child_state, new);
-        }
+    if old_children.len() < new_children.len() {
+        old_children.extend(new_children[old_children.len()..].iter().map(new_state));
+    }
 
-        for (new_tree, i) in new_trees {
-            if self.children.len() > i {
-                self.children[i] = new_tree;
-            } else {
-                self.children.push(new_tree);
-            }
-        }
+    for (child_state, new) in old_children.iter_mut().zip(new_children.iter_mut()) {
+        diff(child_state, new);
     }
 }
 
@@ -377,6 +162,12 @@ pub fn diff_children_custom_with_search<T>(
 
     if current_children.is_empty() {
         current_children.extend(new_children.iter().map(new_state));
+
+        // TODO: Merge loop with extend logic (?)
+        for (child_state, new) in current_children.iter_mut().zip(new_children.iter_mut()) {
+            diff(child_state, new);
+        }
+
         return;
     }
 
@@ -396,9 +187,7 @@ pub fn diff_children_custom_with_search<T>(
             };
 
             let _ = current_children.splice(
-                difference_index
-                    ..difference_index
-                        + (current_children.len() - new_children.len()),
+                difference_index..difference_index + (current_children.len() - new_children.len()),
                 std::iter::empty(),
             );
         }
@@ -409,9 +198,7 @@ pub fn diff_children_custom_with_search<T>(
         let last_maybe_changed = maybe_changed(current_children.len() - 1);
 
         if !first_maybe_changed && last_maybe_changed {
-            current_children.extend(
-                new_children[current_children.len()..].iter().map(new_state),
-            );
+            current_children.extend(new_children[current_children.len()..].iter().map(new_state));
         } else {
             let difference_index = if first_maybe_changed {
                 0
@@ -424,8 +211,7 @@ pub fn diff_children_custom_with_search<T>(
             let _ = current_children.splice(
                 difference_index..difference_index,
                 new_children[difference_index
-                    ..difference_index
-                        + (new_children.len() - current_children.len())]
+                    ..difference_index + (new_children.len() - current_children.len())]
                     .iter()
                     .map(new_state),
             );
@@ -433,9 +219,7 @@ pub fn diff_children_custom_with_search<T>(
     }
 
     // TODO: Merge loop with extend logic (?)
-    for (child_state, new) in
-        current_children.iter_mut().zip(new_children.iter_mut())
-    {
+    for (child_state, new) in current_children.iter_mut().zip(new_children.iter_mut()) {
         diff(child_state, new);
     }
 }
@@ -487,9 +271,7 @@ impl State {
     {
         match self {
             State::None => panic!("Downcast on stateless state"),
-            State::Some(state) => {
-                state.downcast_ref().expect("Downcast widget state")
-            }
+            State::Some(state) => state.downcast_ref().expect("Downcast widget state"),
         }
     }
 
@@ -503,9 +285,7 @@ impl State {
     {
         match self {
             State::None => panic!("Downcast on stateless state"),
-            State::Some(state) => {
-                state.downcast_mut().expect("Downcast widget state")
-            }
+            State::Some(state) => state.downcast_mut().expect("Downcast widget state"),
         }
     }
 }

@@ -30,11 +30,12 @@
 //! Start by calling [`run`]:
 //!
 //! ```no_run,standalone_crate
+//! # use iced::Widget;
 //! pub fn main() -> iced::Result {
 //!     iced::run(update, view)
 //! }
 //! # fn update(state: &mut (), message: ()) {}
-//! # fn view(state: &()) -> iced::Element<'_, ()> { iced::widget::text("").into() }
+//! # fn view(state: &()) -> impl Widget<()> { iced::widget::text("") }
 //! ```
 //!
 //! Define an `update` function to __change__ your state:
@@ -52,11 +53,11 @@
 //! Define a `view` function to __display__ your state:
 //!
 //! ```standalone_crate
+//! # use iced::Widget;
 //! use iced::widget::{button, text};
-//! use iced::Element;
 //!
-//! fn view(counter: &u64) -> Element<'_, Message> {
-//!     button(text(counter)).on_press(Message::Increment).into()
+//! fn view(counter: &u64) -> impl Widget<Message> {
+//!     button(text(counter)).on_press(Message::Increment)
 //! }
 //! # #[derive(Clone)]
 //! # enum Message { Increment }
@@ -84,24 +85,24 @@
 //! But you have to change `update` and `view` accordingly:
 //!
 //! ```standalone_crate
+//! # use iced::Widget;
 //! # struct Counter { value: u64 }
 //! # #[derive(Clone)]
 //! # enum Message { Increment }
 //! # use iced::widget::{button, text};
-//! # use iced::Element;
 //! fn update(counter: &mut Counter, message: Message) {
 //!     match message {
 //!         Message::Increment => counter.value += 1,
 //!     }
 //! }
 //!
-//! fn view(counter: &Counter) -> Element<'_, Message> {
-//!     button(text(counter.value)).on_press(Message::Increment).into()
+//! fn view(counter: &Counter) -> impl Widget<Message> {
+//!     button(text(counter.value)).on_press(Message::Increment)
 //! }
 //! ```
 //!
 //! ## Widgets and Elements
-//! The `view` function must return an [`Element`]. An [`Element`] is just a generic [`widget`].
+//! The `view` function must return a [`Widget`]. An [`Element`] is a boxed [`Widget`], which can be used just as well.
 //!
 //! The [`widget`] module contains a bunch of functions to help you build
 //! and use widgets.
@@ -109,26 +110,25 @@
 //! Widgets are configured using the builder pattern:
 //!
 //! ```standalone_crate
+//! # use iced::Widget;
 //! # struct Counter { value: u64 }
 //! # #[derive(Clone)]
 //! # enum Message { Increment }
 //! use iced::widget::{button, column, text};
-//! use iced::Element;
 //!
-//! fn view(counter: &Counter) -> Element<'_, Message> {
+//! fn view(counter: &Counter) -> impl Widget<Message> {
 //!     column![
 //!         text(counter.value).size(20),
 //!         button("Increment").on_press(Message::Increment),
 //!     ]
 //!     .spacing(10)
-//!     .into()
 //! }
 //! ```
 //!
-//! A widget can be turned into an [`Element`] by calling `into`.
+//! A widget can be turned into an [`Element`] by calling `boxed`.
 //!
 //! Widgets and elements are generic over the message type they produce. The
-//! [`Element`] returned by `view` must have the same `Message` type as
+//! [`Widget`] returned by `view` must have the same `Message` type as
 //! your `update`.
 //!
 //! ## Layout
@@ -139,12 +139,13 @@
 //! [rows], [columns], and [containers]:
 //!
 //! ```standalone_crate
+//! # use iced::Widget;
 //! # struct State;
 //! # enum Message {}
 //! use iced::widget::{column, container, row};
-//! use iced::{Fill, Element};
+//! use iced::Fill;
 //!
-//! fn view(state: &State) -> Element<'_, Message> {
+//! fn view(state: &State) -> impl Widget<Message> {
 //!     container(
 //!         column![
 //!             "Top",
@@ -156,7 +157,6 @@
 //!     .padding(10)
 //!     .center_x(Fill)
 //!     .center_y(Fill)
-//!     .into()
 //! }
 //! ```
 //!
@@ -182,13 +182,13 @@
 //! A fixed numeric [`Length`] in [`Pixels`] can also be used:
 //!
 //! ```standalone_crate
+//! # use iced::Widget;
 //! # struct State;
 //! # enum Message {}
 //! use iced::widget::container;
-//! use iced::Element;
 //!
-//! fn view(state: &State) -> Element<'_, Message> {
-//!     container("I am 300px tall!").height(300).into()
+//! fn view(state: &State) -> impl Widget<Message> {
+//!     container("I am 300px tall!").height(300)
 //! }
 //! ```
 //!
@@ -198,6 +198,7 @@
 //! calling [`run`]:
 //!
 //! ```no_run,standalone_crate
+//! # use iced::Widget;
 //! # struct State;
 //! use iced::Theme;
 //!
@@ -216,7 +217,7 @@
 //!     Theme::TokyoNight
 //! }
 //! # fn update(state: &mut State, message: ()) {}
-//! # fn view(state: &State) -> iced::Element<'_, ()> { iced::widget::text("").into() }
+//! # fn view(state: &State) -> impl Widget<()> { iced::widget::text("") }
 //! ```
 //!
 //! The `theme` function takes the current state of the application, allowing the
@@ -232,13 +233,13 @@
 //! The appearance of a widget can be changed by calling its `style` method:
 //!
 //! ```standalone_crate
+//! # use iced::Widget;
 //! # struct State;
 //! # enum Message {}
 //! use iced::widget::container;
-//! use iced::Element;
 //!
-//! fn view(state: &State) -> Element<'_, Message> {
-//!     container("I am a rounded box!").style(container::rounded_box).into()
+//! fn view(state: &State) -> impl Widget<Message> {
+//!     container("I am a rounded box!").style(container::rounded_box)
 //! }
 //! ```
 //!
@@ -246,15 +247,16 @@
 //! [`Theme`], returns the widget style:
 //!
 //! ```standalone_crate
+//! # use iced::Widget;
 //! # struct State;
 //! # #[derive(Clone)]
 //! # enum Message {}
 //! use iced::widget::button;
-//! use iced::{Element, Theme};
+//! use iced::Theme;
 //!
-//! fn view(state: &State) -> Element<'_, Message> {
+//! fn view(state: &State) -> impl Widget<Message> {
 //!     button("I am a styled button!").style(|theme: &Theme, status| {
-//!         let palette = theme.extended_palette();
+//!         let palette = theme.palette();
 //!
 //!         match status {
 //!             button::Status::Active => {
@@ -264,22 +266,19 @@
 //!             _ => button::primary(theme, status),
 //!         }
 //!     })
-//!     .into()
 //! }
 //! ```
 //!
 //! Widgets that can be in multiple different states will also provide the closure
 //! with some [`Status`], allowing you to use a different style for each state.
 //!
-//! You can extract the [`Palette`] colors of a [`Theme`] with the [`palette`] or
-//! [`extended_palette`] methods.
+//! You can extract the [`Palette`] colors of a [`Theme`] with the [`palette`] method.
 //!
 //! Most widgets provide styling functions for your convenience in their respective modules;
 //! like [`container::rounded_box`], [`button::primary`], or [`text::danger`].
 //!
 //! [`Status`]: widget::button::Status
 //! [`palette`]: Theme::palette
-//! [`extended_palette`]: Theme::extended_palette
 //! [`container::rounded_box`]: widget::container::rounded_box
 //! [`button::primary`]: widget::button::primary
 //! [`text::danger`]: widget::text::danger
@@ -326,8 +325,8 @@
 //!
 //! Tasks can also be used to interact with the iced runtime. Some modules
 //! expose functions that create tasks for different purposes—like [changing
-//! window settings](window#functions), [focusing a widget](widget::operation::focus_next), or
-//! [querying its visible bounds](widget::selector::find).
+//! window settings](window#functions), [focusing a widget](widget::operation::focus_next),
+//! or querying the visible bounds of a widget with the `selector` module.
 //!
 //! Like futures and streams, tasks expose [a monadic interface](Task::then)—but they can also be
 //! [mapped](Task::map), [chained](Task::chain), [batched](Task::batch), [canceled](Task::abortable),
@@ -339,6 +338,7 @@
 //! You will need to define a `subscription` function and use the [`Application`] builder:
 //!
 //! ```no_run,standalone_crate
+//! # use iced::Widget;
 //! # struct State;
 //! use iced::window;
 //! use iced::{Size, Subscription};
@@ -359,7 +359,7 @@
 //! }
 //! # fn new() -> State { State }
 //! # fn update(state: &mut State, message: Message) {}
-//! # fn view(state: &State) -> iced::Element<'_, Message> { iced::widget::text("").into() }
+//! # fn view(state: &State) -> impl Widget<Message> { iced::widget::text("") }
 //! ```
 //!
 //! A [`Subscription`] is [a _declarative_ builder of streams](Subscription#the-lifetime-of-a-subscription)
@@ -368,7 +368,7 @@
 //! visible widgets of your user interface, at every moment.
 //!
 //! As with tasks, some modules expose convenient functions that build a [`Subscription`] for you—like
-//! [`time::every`] which can be used to listen to time, or [`keyboard::listen`] which will notify you
+//! `time::every` which can be used to listen to time, or [`keyboard::listen`] which will notify you
 //! of any keyboard events. But you can also create your own with [`Subscription::run`] and [`run_with`].
 //!
 //! [`run_with`]: Subscription::run_with
@@ -405,7 +405,7 @@
 //! use contacts::Contacts;
 //! use conversation::Conversation;
 //!
-//! use iced::{Element, Task};
+//! use iced::{Task, Widget};
 //!
 //! struct State {
 //!     screen: Screen,
@@ -452,10 +452,10 @@
 //!     }
 //! }
 //!
-//! fn view(state: &State) -> Element<'_, Message> {
+//! fn view(state: &State) -> impl Widget<Message> {
 //!     match &state.screen {
-//!         Screen::Contacts(contacts) => contacts.view().map(Message::Contacts),
-//!         Screen::Conversation(conversation) => conversation.view().map(Message::Conversation),
+//!         Screen::Contacts(contacts) => contacts.view().map(Message::Contacts).boxed(),
+//!         Screen::Conversation(conversation) => conversation.view().map(Message::Conversation).boxed(),
 //!     }
 //! }
 //! ```
@@ -468,13 +468,12 @@
 //! Effectively, this approach lets you "tell a story" to connect different screens together in a type safe
 //! way.
 //!
-//! Furthermore, functor methods like [`Task::map`], [`Element::map`], and [`Subscription::map`] make composition
+//! Furthermore, functor methods like [`Task::map`], [`Widget::map`], and [`Subscription::map`] make composition
 //! seamless.
 #![doc(
     html_logo_url = "https://raw.githubusercontent.com/iced-rs/iced/bdf0430880f5c29443f5f0a0ae4895866dfef4c6/docs/logo.svg"
 )]
 #![cfg_attr(docsrs, feature(doc_cfg))]
-use iced_widget::graphics;
 use iced_widget::renderer;
 // use iced_winit as shell;
 // use iced_winit::core;
@@ -489,7 +488,6 @@ pub use iced_futures::stream;
 pub use iced_runtime as runtime;
 pub use iced_widget::core;
 
-#[cfg(feature = "winit")]
 use iced_winit as shell;
 
 // #[cfg(not(any(
@@ -518,7 +516,7 @@ use iced_winit as shell;
 #[cfg(feature = "highlighter")]
 pub use iced_highlighter as highlighter;
 
-#[cfg(feature = "wgpu")]
+#[cfg(feature = "wgpu-bare")]
 pub use iced_renderer::wgpu::wgpu;
 
 pub use iced_program as program;
@@ -526,21 +524,19 @@ pub use iced_program as program;
 mod error;
 // pub mod program;
 
+#[cfg(feature = "hot")]
+mod hot;
+
 pub mod application;
 pub mod daemon;
 pub mod time;
 pub mod window;
 
-#[cfg(feature = "winit")]
+/// Platform-specific integrations for native shells and runtimes.
 pub mod platform_specific {
-    pub use iced_winit::{
-        platform_specific as shell, runtime::platform_specific as runtime,
-    };
+    pub use iced_winit::{platform_specific as shell, runtime::platform_specific as runtime};
 }
 
-#[cfg(feature = "winit")]
-pub use application::Application;
-#[cfg(feature = "winit")]
 pub use program::Program;
 
 #[cfg(feature = "advanced")]
@@ -554,17 +550,16 @@ pub use crate::core::gradient;
 pub use crate::core::padding;
 pub use crate::core::theme;
 pub use crate::core::{
-    Alignment, Animation, Background, Border, Color, ContentFit, Degrees,
-    Function, Gradient, Length, Never, Padding, Pixels, Point, Radians,
-    Rectangle, Rotation, Settings, Shadow, Size, Theme, Transformation, Vector,
-    id, layout::Limits, never,
+    Alignment, Animation, Background, Border, Code, Color, ContentFit, Degrees, Function, Gradient,
+    Length, Never, Padding, Pixels, Point, Radians, Rectangle, Rotation, Settings, Shadow, Size,
+    Theme, Transformation, Vector, never,
 };
 pub use crate::program::{Preset, message};
 pub use crate::runtime::exit;
 pub use iced_futures::Subscription;
 
 pub use Alignment::Center;
-pub use Length::{Fill, FillPortion, Shrink};
+pub use Length::{Fill, FillPortion, Fit, Shrink};
 pub use alignment::Horizontal::{Left, Right};
 pub use alignment::Vertical::{Bottom, Top};
 
@@ -583,12 +578,30 @@ pub mod task {
 
 pub mod clipboard {
     //! Access the clipboard.
-    pub use crate::runtime::clipboard::{
-        read, read_data, read_primary, read_primary_data, write, write_data,
-        write_primary, write_primary_data,
-    };
-    pub use dnd;
-    pub use mime;
+    pub use crate::core::clipboard::{Content, Error, Kind};
+    pub use crate::runtime::clipboard::{read, read_files, read_html, read_text, write};
+
+    /// MIME data and drag-and-drop APIs.
+    pub mod dnd {
+        pub use crate::runtime::dnd::{end_dnd, peek_dnd, register_dnd_destination, set_action};
+        pub use ::dnd::*;
+    }
+
+    /// MIME-based clipboard data types.
+    pub mod mime {
+        pub use ::mime::*;
+    }
+
+    #[cfg(feature = "image-without-codecs")]
+    pub use crate::core::clipboard::Image;
+
+    #[cfg(feature = "image-without-codecs")]
+    pub use crate::runtime::clipboard::read_image;
+}
+
+/// Widget identifiers.
+pub mod id {
+    pub use crate::core::widget::Id;
 }
 
 pub mod executor {
@@ -609,7 +622,7 @@ pub mod event {
     #[cfg(wayland_platform)]
     pub use crate::core::event::wayland;
     pub use crate::core::event::{Event, Status};
-    pub use iced_futures::event::{listen, listen_raw, listen_with};
+    pub use iced_futures::event::{listen, listen_raw, listen_url, listen_with};
 }
 
 pub mod keyboard {
@@ -621,9 +634,7 @@ pub mod keyboard {
 
 pub mod mouse {
     //! Listen and react to mouse events.
-    pub use crate::core::mouse::{
-        Button, Cursor, Event, Interaction, ScrollDelta,
-    };
+    pub use crate::core::mouse::{Button, Cursor, Event, Interaction, ScrollDelta};
 }
 
 pub mod system {
@@ -639,15 +650,12 @@ pub mod overlay {
 
     /// A generic overlay.
     ///
-    /// This is an alias of an [`overlay::Element`] with a default `Renderer`.
+    /// This is an alias of an [`overlay::Element`] with default `Theme` and
+    /// `Renderer` parameters.
     ///
     /// [`overlay::Element`]: crate::core::overlay::Element
-    pub type Element<
-        'a,
-        Message,
-        Theme = crate::Renderer,
-        Renderer = crate::Renderer,
-    > = crate::core::overlay::Element<'a, Message, Theme, Renderer>;
+    pub type Element<'a, Message, Theme = crate::Theme, Renderer = crate::Renderer> =
+        crate::core::overlay::Element<'a, Message, Theme, Renderer>;
 
     pub use iced_widget::overlay::*;
 }
@@ -663,7 +671,7 @@ pub mod widget {
     pub use iced_runtime::widget::*;
     pub use iced_widget::*;
 
-    #[cfg(feature = "image")]
+    #[cfg(feature = "image-without-codecs")]
     pub mod image {
         //! Images display raster graphics in different formats (PNG, JPG, etc.).
         pub use iced_runtime::image::{Allocation, Error, allocate};
@@ -676,8 +684,16 @@ pub mod widget {
     mod renderer {}
 }
 
-pub use application::application;
-pub use daemon::{Daemon, daemon};
+pub mod backend {
+    //! Graphical backends are designed to aid in rendering computer graphics to a monitor.
+    pub use iced_core::backend::*;
+    pub use iced_runtime::backend::*;
+}
+
+pub use application::Application;
+pub use backend::Backend;
+pub use backend::PowerPreference;
+pub use daemon::Daemon;
 pub use error::Error;
 pub use event::Event;
 pub use executor::Executor;
@@ -686,22 +702,17 @@ pub use renderer::Renderer;
 #[cfg(feature = "canvas")]
 pub use renderer::graphics::geometry;
 pub use task::Task;
+pub use widget::{Element, Widget};
 pub use window::Window;
 
-/// A generic widget.
-///
-/// This is an alias of an `iced_native` element with a default `Renderer`.
-pub type Element<
-    'a,
-    Message,
-    Theme = crate::Theme,
-    Renderer = crate::Renderer,
-> = crate::core::Element<'a, Message, Theme, Renderer>;
+#[doc(inline)]
+pub use application::application;
+#[doc(inline)]
+pub use daemon::daemon;
 
 /// The result of running an iced program.
 pub type Result = std::result::Result<(), Error>;
 
-#[cfg(feature = "winit")]
 /// Runs a basic iced application with default [`Settings`] given its title,
 /// update, and view logic.
 ///
@@ -709,7 +720,7 @@ pub type Result = std::result::Result<(), Error>;
 ///
 /// # Example
 /// ```no_run,standalone_crate
-/// use iced::widget::{button, column, text, Column};
+/// use iced::widget::{button, column, text, Widget};
 ///
 /// pub fn main() -> iced::Result {
 ///     iced::run(update, view)
@@ -726,7 +737,7 @@ pub type Result = std::result::Result<(), Error>;
 ///     }
 /// }
 ///
-/// fn view(value: &u64) -> Column<Message> {
+/// fn view(value: &u64) -> impl Widget<Message> {
 ///     column![
 ///         text(value),
 ///         button("+").on_press(Message::Increment),
@@ -735,8 +746,7 @@ pub type Result = std::result::Result<(), Error>;
 /// ```
 pub fn run<State, Message, Theme, Renderer>(
     update: impl application::UpdateFn<State, Message> + 'static,
-    view: impl for<'a> application::ViewFn<'a, State, Message, Theme, Renderer>
-    + 'static,
+    view: impl for<'a> application::ViewFn<'a, State, Message, Theme, Renderer> + 'static,
 ) -> Result
 where
     State: Default + 'static,

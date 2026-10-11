@@ -52,25 +52,16 @@ pub fn event_func(
                   -> bool {
                 // Keep track of border resize state and set cursor icon when in range
                 match window_event {
-                    winit::event::WindowEvent::PointerMoved {
-                        position,
-                        ..
-                    } => {
+                    winit::event::WindowEvent::PointerMoved { position, .. } => {
                         let location = if is_resizable(window) {
-                            cursor_resize_direction(
-                                window.surface_size(),
-                                *position,
-                                border_size,
-                            )
+                            cursor_resize_direction(window.surface_size(), *position, border_size)
                         } else {
                             None
                         };
                         if location != cursor_prev_resize_direction {
                             match location {
-                                Some(direction) => window.set_cursor(
-                                    resize_direction_cursor_icon(direction)
-                                        .into(),
-                                ),
+                                Some(direction) => window
+                                    .set_cursor(resize_direction_cursor_icon(direction).into()),
                                 None => restore_cursor(window, ui_interaction),
                             }
                             cursor_prev_resize_direction = location;
@@ -85,12 +76,8 @@ pub fn event_func(
                     winit::event::WindowEvent::PointerButton {
                         state: winit::event::ElementState::Pressed,
                         button:
-                            winit::event::ButtonSource::Mouse(
-                                winit::event::MouseButton::Left,
-                            )
-                            | winit::event::ButtonSource::Touch {
-                                finger_id: _, ..
-                            },
+                            winit::event::ButtonSource::Mouse(winit::event::MouseButton::Left)
+                            | winit::event::ButtonSource::Touch { finger_id: _, .. },
                         primary: true,
                         ..
                     } => {
@@ -114,16 +101,11 @@ pub fn event_func(
 
 /// Whether the window can currently be resized from its border.
 fn is_resizable(window: &dyn winit::window::Window) -> bool {
-    !window.is_decorated()
-        && !window.is_maximized()
-        && window.fullscreen().is_none()
+    !window.is_decorated() && !window.is_maximized() && window.fullscreen().is_none()
 }
 
 /// Set the cursor back to the one the UI last set.
-fn restore_cursor(
-    window: &dyn winit::window::Window,
-    ui_interaction: mouse::Interaction,
-) {
+fn restore_cursor(window: &dyn winit::window::Window, ui_interaction: mouse::Interaction) {
     // `None` means the UI hid the cursor, which a cursor icon doesn't undo.
     if let Some(icon) = conversion::mouse_interaction(ui_interaction) {
         window.set_cursor(icon.into());
@@ -131,9 +113,7 @@ fn restore_cursor(
 }
 
 /// Get the cursor icon that corresponds to the resize direction.
-fn resize_direction_cursor_icon(
-    resize_direction: ResizeDirection,
-) -> CursorIcon {
+fn resize_direction_cursor_icon(resize_direction: ResizeDirection) -> CursorIcon {
     match resize_direction {
         ResizeDirection::East => CursorIcon::EResize,
         ResizeDirection::North => CursorIcon::NResize,

@@ -11,7 +11,8 @@ pub struct Action<Message> {
 }
 
 impl<Message> Action<Message> {
-    fn new() -> Self {
+    /// Creates an [`Action`] that does nothing.
+    pub fn none() -> Self {
         Self {
             message_to_publish: None,
             redraw_request: window::RedrawRequest::Wait,
@@ -27,7 +28,7 @@ impl<Message> Action<Message> {
     pub fn capture() -> Self {
         Self {
             event_status: event::Status::Captured,
-            ..Self::new()
+            ..Self::none()
         }
     }
 
@@ -38,7 +39,7 @@ impl<Message> Action<Message> {
     pub fn publish(message: Message) -> Self {
         Self {
             message_to_publish: Some(message),
-            ..Self::new()
+            ..Self::none()
         }
     }
 
@@ -47,7 +48,7 @@ impl<Message> Action<Message> {
     pub fn request_redraw() -> Self {
         Self {
             redraw_request: window::RedrawRequest::NextFrame,
-            ..Self::new()
+            ..Self::none()
         }
     }
 
@@ -59,7 +60,7 @@ impl<Message> Action<Message> {
     pub fn request_redraw_at(at: Instant) -> Self {
         Self {
             redraw_request: window::RedrawRequest::At(at),
-            ..Self::new()
+            ..Self::none()
         }
     }
 
@@ -69,17 +70,27 @@ impl<Message> Action<Message> {
         self
     }
 
+    /// Requests a redraw at the given [`Instant`]. See [`Self::request_redraw_at`].
+    pub fn and_request_redraw_at(mut self, at: Instant) -> Self {
+        self.redraw_request = window::RedrawRequest::At(at);
+        self
+    }
+
     /// Converts the [`Action`] into its internal parts.
     ///
     /// This method is meant to be used by runtimes, libraries, or internal
     /// widget implementations.
-    pub fn into_inner(
-        self,
-    ) -> (Option<Message>, window::RedrawRequest, event::Status) {
+    pub fn into_inner(self) -> (Option<Message>, window::RedrawRequest, event::Status) {
         (
             self.message_to_publish,
             self.redraw_request,
             self.event_status,
         )
+    }
+}
+
+impl<Message> Default for Action<Message> {
+    fn default() -> Self {
+        Self::none()
     }
 }

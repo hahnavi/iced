@@ -1,16 +1,14 @@
 //! Show a circular progress indicator.
 use iced::advanced::layout;
 use iced::advanced::renderer;
+use iced::advanced::widget::Meta;
 use iced::advanced::widget::tree::{self, Tree};
-use iced::advanced::{self, Clipboard, Layout, Shell, Widget};
+use iced::advanced::{self, Layout, Shell, Widget};
 use iced::mouse;
 use iced::time::Instant;
 use iced::widget::canvas;
 use iced::window;
-use iced::{
-    Background, Color, Element, Event, Length, Radians, Rectangle, Renderer,
-    Size, Vector,
-};
+use iced::{Color, Event, Length, Radians, Rectangle, Renderer, Size, Vector};
 
 use super::easing::{self, Easing};
 
@@ -49,24 +47,6 @@ where
         }
     }
 
-    /// Sets the size of the [`Circular`].
-    pub fn size(mut self, size: f32) -> Self {
-        self.size = size;
-        self
-    }
-
-    /// Sets the bar height of the [`Circular`].
-    pub fn bar_height(mut self, bar_height: f32) -> Self {
-        self.bar_height = bar_height;
-        self
-    }
-
-    /// Sets the style variant of this [`Circular`].
-    pub fn style(mut self, style: <Theme as StyleSheet>::Style) -> Self {
-        self.style = style;
-        self
-    }
-
     /// Sets the easing of this [`Circular`].
     pub fn easing(mut self, easing: &'a Easing) -> Self {
         self.easing = easing;
@@ -76,13 +56,6 @@ where
     /// Sets the cycle duration of this [`Circular`].
     pub fn cycle_duration(mut self, duration: Duration) -> Self {
         self.cycle_duration = duration / 2;
-        self
-    }
-
-    /// Sets the base rotation duration of this [`Circular`]. This is the duration that a full
-    /// rotation would take if the cycle rotation were set to 0.0 (no expanding or contracting)
-    pub fn rotation_duration(mut self, duration: Duration) -> Self {
-        self.rotation_duration = duration;
         self
     }
 }
@@ -135,12 +108,9 @@ impl Animation {
             Self::Contracting { rotation, .. } => Self::Expanding {
                 start: now,
                 progress: 0.0,
-                rotation: rotation.wrapping_add(
-                    BASE_ROTATION_SPEED.wrapping_add(
-                        (f64::from(WRAP_ANGLE / (2.0 * Radians::PI))
-                            * u32::MAX as f64) as u32,
-                    ),
-                ),
+                rotation: rotation.wrapping_add(BASE_ROTATION_SPEED.wrapping_add(
+                    (f64::from(WRAP_ANGLE / (2.0 * Radians::PI)) * u32::MAX as f64) as u32,
+                )),
                 last: now,
             },
         }
@@ -148,17 +118,13 @@ impl Animation {
 
     fn start(&self) -> Instant {
         match self {
-            Self::Expanding { start, .. } | Self::Contracting { start, .. } => {
-                *start
-            }
+            Self::Expanding { start, .. } | Self::Contracting { start, .. } => *start,
         }
     }
 
     fn last(&self) -> Instant {
         match self {
-            Self::Expanding { last, .. } | Self::Contracting { last, .. } => {
-                *last
-            }
+            Self::Expanding { last, .. } | Self::Contracting { last, .. } => *last,
         }
     }
 
@@ -174,15 +140,8 @@ impl Animation {
             * (u32::MAX) as f32) as u32;
 
         match elapsed {
-            elapsed if elapsed > cycle_duration => {
-                self.next(additional_rotation, now)
-            }
-            _ => self.with_elapsed(
-                cycle_duration,
-                additional_rotation,
-                elapsed,
-                now,
-            ),
+            elapsed if elapsed > cycle_duration => self.next(additional_rotation, now),
+            _ => self.with_elapsed(cycle_duration, additional_rotation, elapsed, now),
         }
     }
 
@@ -216,8 +175,7 @@ impl Animation {
 
     fn rotation(&self) -> f32 {
         match self {
-            Self::Expanding { rotation, .. }
-            | Self::Contracting { rotation, .. } => {
+            Self::Expanding { rotation, .. } | Self::Contracting { rotation, .. } => {
                 *rotation as f32 / u32::MAX as f32
             }
         }
@@ -230,8 +188,9 @@ struct State {
     cache: canvas::Cache,
 }
 
-impl<'a, Message, Theme> Widget<Message, Theme, Renderer>
-    for Circular<'a, Theme>
+impl<'a, Theme> Meta for Circular<'a, Theme> where Theme: StyleSheet {}
+
+impl<'a, Message, Theme> Widget<Message, Theme, Renderer> for Circular<'a, Theme>
 where
     Message: 'a + Clone,
     Theme: StyleSheet,
@@ -251,34 +210,27 @@ where
         }
     }
 
-    fn layout(
-        &mut self,
-        _tree: &mut Tree,
-        _renderer: &Renderer,
-        limits: &layout::Limits,
-    ) -> layout::Node {
-        layout::atomic(limits, self.size, self.size)
+    fn layout(&mut self, tree: &mut Tree, _renderer: &Renderer, limits: &layout::Limits) {
+        tree.size = layout::atomic(limits, self.size, self.size);
     }
 
     fn update(
         &mut self,
         tree: &mut Tree,
         event: &Event,
-        _layout: Layout<'_>,
+        _layout: Layout,
         _cursor: mouse::Cursor,
         _renderer: &Renderer,
-        _clipboard: &mut dyn Clipboard,
         shell: &mut Shell<'_, Message>,
         _viewport: &Rectangle,
     ) {
         let state = tree.state.downcast_mut::<State>();
 
         if let Event::Window(window::Event::RedrawRequested(now)) = event {
-            state.animation = state.animation.timed_transition(
-                self.cycle_duration,
-                self.rotation_duration,
-                *now,
-            );
+            state.animation =
+                state
+                    .animation
+                    .timed_transition(self.cycle_duration, self.rotation_duration, *now);
 
             state.cache.clear();
             shell.request_redraw();
@@ -291,7 +243,7 @@ where
         renderer: &mut Renderer,
         theme: &Theme,
         _style: &renderer::Style,
-        layout: Layout<'_>,
+        layout: Layout,
         _cursor: mouse::Cursor,
         _viewport: &Rectangle,
     ) {
@@ -299,8 +251,7 @@ where
 
         let state = tree.state.downcast_ref::<State>();
         let bounds = layout.bounds();
-        let custom_style =
-            <Theme as StyleSheet>::appearance(theme, &self.style);
+        let custom_style = <Theme as StyleSheet>::appearance(theme, &self.style);
 
         let geometry = state.cache.draw(renderer, bounds.size(), |frame| {
             let track_radius = frame.width() / 2.0 - self.bar_height;
@@ -323,17 +274,14 @@ where
                         center: frame.center(),
                         radius: track_radius,
                         start_angle: start,
-                        end_angle: start
-                            + MIN_ANGLE
-                            + WRAP_ANGLE * (self.easing.y_at_x(progress)),
+                        end_angle: start + MIN_ANGLE + WRAP_ANGLE * (self.easing.y_at_x(progress)),
                     });
                 }
                 Animation::Contracting { progress, .. } => {
                     builder.arc(canvas::path::Arc {
                         center: frame.center(),
                         radius: track_radius,
-                        start_angle: start
-                            + WRAP_ANGLE * (self.easing.y_at_x(progress)),
+                        start_angle: start + WRAP_ANGLE * (self.easing.y_at_x(progress)),
                         end_angle: start + MIN_ANGLE + WRAP_ANGLE,
                     });
                 }
@@ -349,32 +297,16 @@ where
             );
         });
 
-        renderer.with_translation(
-            Vector::new(bounds.x, bounds.y),
-            |renderer| {
-                use iced::advanced::graphics::geometry::Renderer as _;
+        renderer.with_translation(Vector::new(bounds.x, bounds.y), |renderer| {
+            use iced::advanced::graphics::geometry::Renderer as _;
 
-                renderer.draw_geometry(geometry);
-            },
-        );
-    }
-}
-
-impl<'a, Message, Theme> From<Circular<'a, Theme>>
-    for Element<'a, Message, Theme, Renderer>
-where
-    Message: Clone + 'a,
-    Theme: StyleSheet + 'a,
-{
-    fn from(circular: Circular<'a, Theme>) -> Self {
-        Self::new(circular)
+            renderer.draw_geometry(geometry);
+        });
     }
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct Appearance {
-    /// The [`Background`] of the progress indicator.
-    pub background: Option<Background>,
     /// The track [`Color`] of the progress indicator.
     pub track_color: Color,
     /// The bar [`Color`] of the progress indicator.
@@ -384,7 +316,6 @@ pub struct Appearance {
 impl std::default::Default for Appearance {
     fn default() -> Self {
         Self {
-            background: None,
             track_color: Color::TRANSPARENT,
             bar_color: Color::BLACK,
         }
@@ -404,10 +335,8 @@ impl StyleSheet for iced::Theme {
     type Style = ();
 
     fn appearance(&self, _style: &Self::Style) -> Appearance {
-        let palette = self.extended_palette();
-
+        let palette = self.palette();
         Appearance {
-            background: None,
             track_color: palette.background.weak.color,
             bar_color: palette.primary.base.color,
         }

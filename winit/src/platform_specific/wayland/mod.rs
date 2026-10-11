@@ -57,27 +57,17 @@ impl std::fmt::Debug for Action {
                 .field(arg0)
                 .field(arg1)
                 .finish(),
-            Self::RequestRedraw(arg0) => {
-                f.debug_tuple("RequestRedraw").field(arg0).finish()
-            }
-            Self::TrackWindow(_arg0, arg1) => {
-                f.debug_tuple("TrackWindow").field(arg1).finish()
-            }
-            Self::RemoveWindow(arg0) => {
-                f.debug_tuple("RemoveWindow").field(arg0).finish()
-            }
+            Self::RequestRedraw(arg0) => f.debug_tuple("RequestRedraw").field(arg0).finish(),
+            Self::TrackWindow(_arg0, arg1) => f.debug_tuple("TrackWindow").field(arg1).finish(),
+            Self::RemoveWindow(arg0) => f.debug_tuple("RemoveWindow").field(arg0).finish(),
             Self::Dropped(_surface_id_wrapper) => write!(f, "Dropped"),
             Self::SubsurfaceResize(id, size) => f
                 .debug_tuple("SubsurfaceResize")
                 .field(id)
                 .field(size)
                 .finish(),
-            Self::ResizeWindow(arg0) => {
-                f.debug_tuple("ResizeWindow").field(arg0).finish()
-            }
-            Self::SetImeAllowed(allowed) => {
-                f.debug_tuple("SetImeAllowed").field(allowed).finish()
-            }
+            Self::ResizeWindow(arg0) => f.debug_tuple("ResizeWindow").field(arg0).finish(),
+            Self::SetImeAllowed(allowed) => f.debug_tuple("SetImeAllowed").field(allowed).finish(),
             Self::SetImeCursorArea(x, y, width, height) => f
                 .debug_tuple("SetImeCursorArea")
                 .field(x)
@@ -85,9 +75,7 @@ impl std::fmt::Debug for Action {
                 .field(width)
                 .field(height)
                 .finish(),
-            Self::SetImePurpose(purpose) => {
-                f.debug_tuple("SetImePurpose").field(purpose).finish()
-            }
+            Self::SetImePurpose(purpose) => f.debug_tuple("SetImePurpose").field(purpose).finish(),
         }
     }
 }
@@ -115,9 +103,7 @@ impl PlatformSpecific {
     ) -> Self {
         self.wayland.winit_event_sender = Some(tx);
         self.wayland.conn = match display.raw_display_handle() {
-            Ok(raw_window_handle::RawDisplayHandle::Wayland(
-                wayland_display_handle,
-            )) => {
+            Ok(raw_window_handle::RawDisplayHandle::Wayland(wayland_display_handle)) => {
                 let backend = unsafe {
                     wayland_backend::client::Backend::from_foreign_display(
                         wayland_display_handle.display.as_ptr().cast(),
@@ -136,13 +122,12 @@ impl PlatformSpecific {
         };
         self.wayland.display_handle = Some(display);
         self.wayland.proxy = Some(raw);
-        self.wayland.sender =
-            crate::platform_specific::event_loop::SctkEventLoop::new(
-                self.wayland.winit_event_sender.clone().unwrap(),
-                self.wayland.proxy.clone().unwrap(),
-                self.wayland.display_handle.clone().unwrap(),
-            )
-            .ok();
+        self.wayland.sender = crate::platform_specific::event_loop::SctkEventLoop::new(
+            self.wayland.winit_event_sender.clone().unwrap(),
+            self.wayland.proxy.clone().unwrap(),
+            self.wayland.display_handle.clone().unwrap(),
+        )
+        .ok();
         self
     }
 
@@ -152,13 +137,12 @@ impl PlatformSpecific {
             && self.wayland.display_handle.is_some()
             && self.wayland.proxy.is_some()
         {
-            self.wayland.sender =
-                crate::platform_specific::event_loop::SctkEventLoop::new(
-                    self.wayland.winit_event_sender.clone().unwrap(),
-                    self.wayland.proxy.clone().unwrap(),
-                    self.wayland.display_handle.clone().unwrap(),
-                )
-                .ok();
+            self.wayland.sender = crate::platform_specific::event_loop::SctkEventLoop::new(
+                self.wayland.winit_event_sender.clone().unwrap(),
+                self.wayland.proxy.clone().unwrap(),
+                self.wayland.display_handle.clone().unwrap(),
+            )
+            .ok();
         }
 
         if let Some(tx) = self.wayland.sender.as_ref() {
@@ -184,9 +168,7 @@ impl WaylandSpecific {
         e: SctkEvent,
         events: &mut Vec<(Option<window::Id>, iced_runtime::core::Event)>,
         program: &'a crate::program::Instance<P>,
-        compositor: &mut Option<
-            <<P as Program>::Renderer as compositor::Default>::Compositor,
-        >,
+        compositor: &mut Option<<<P as Program>::Renderer as compositor::Default>::Compositor>,
         window_manager: &mut WindowManager<
             P,
             <<P as Program>::Renderer as compositor::Default>::Compositor,
@@ -270,10 +252,7 @@ impl WaylandSpecific {
         };
     }
 
-    pub(crate) fn retain_subsurfaces<F: Fn(window::Id) -> bool>(
-        &mut self,
-        keep: F,
-    ) {
+    pub(crate) fn retain_subsurfaces<F: Fn(window::Id) -> bool>(&mut self, keep: F) {
         self.surface_subsurfaces.retain(|k, v| keep(*k))
     }
 
@@ -281,11 +260,7 @@ impl WaylandSpecific {
         let _ = crate::subsurface_widget::take_subsurfaces();
     }
 
-    pub(crate) fn update_subsurfaces(
-        &mut self,
-        id: window::Id,
-        wl_surface: &WlSurface,
-    ) {
+    pub(crate) fn update_subsurfaces(&mut self, id: window::Id, wl_surface: &WlSurface) {
         let subsurfaces = crate::subsurface_widget::take_subsurfaces();
         let mut entry = self.surface_subsurfaces.entry(id);
         let surface_subsurfaces = entry.or_default();
@@ -293,11 +268,7 @@ impl WaylandSpecific {
             return;
         };
 
-        subsurface_state.update_subsurfaces(
-            wl_surface,
-            surface_subsurfaces,
-            &subsurfaces,
-        );
+        subsurface_state.update_subsurfaces(wl_surface, surface_subsurfaces, &subsurfaces);
     }
 
     pub(crate) fn create_surface(
@@ -321,22 +292,13 @@ impl WaylandSpecific {
         offset: Vector,
     ) {
         if let Some(subsurface_state) = self.subsurface_state.as_mut() {
-            if let RawWindowHandle::Wayland(window) =
-                window.window_handle().unwrap().as_raw()
-            {
+            if let RawWindowHandle::Wayland(window) = window.window_handle().unwrap().as_raw() {
                 let id = unsafe {
-                    ObjectId::from_ptr(
-                        WlSurface::interface(),
-                        window.surface.as_ptr().cast(),
-                    )
-                    .unwrap()
+                    ObjectId::from_ptr(WlSurface::interface(), window.surface.as_ptr().cast())
+                        .unwrap()
                 };
-                let surface =
-                    WlSurface::from_id(self.conn.as_ref().unwrap(), id)
-                        .unwrap();
-                subsurface_state.update_surface_shm(
-                    &surface, width, height, scale, data, offset,
-                );
+                let surface = WlSurface::from_id(self.conn.as_ref().unwrap(), id).unwrap();
+                subsurface_state.update_surface_shm(&surface, width, height, scale, data, offset);
             }
         }
     }
@@ -347,16 +309,12 @@ struct Window(WlSurface);
 impl HasWindowHandle for Window {
     fn window_handle(
         &self,
-    ) -> Result<
-        raw_window_handle::WindowHandle<'_>,
-        raw_window_handle::HandleError,
-    > {
+    ) -> Result<raw_window_handle::WindowHandle<'_>, raw_window_handle::HandleError> {
         Ok(unsafe {
             raw_window_handle::WindowHandle::borrow_raw(
                 raw_window_handle::RawWindowHandle::Wayland(
                     raw_window_handle::WaylandWindowHandle::new(
-                        std::ptr::NonNull::new(self.0.id().as_ptr() as *mut _)
-                            .unwrap(),
+                        std::ptr::NonNull::new(self.0.id().as_ptr() as *mut _).unwrap(),
                     ),
                 ),
             )

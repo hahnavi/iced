@@ -1,11 +1,10 @@
-use iced::highlighter;
 use iced::keyboard;
 use iced::widget::{
-    button, center_x, column, container, operation, pick_list, row, space,
-    text, text_editor, toggler, tooltip,
+    button, center_x, column, container, operation, pick_list, row, space, text, text_editor,
+    toggler, tooltip,
 };
 use iced::window;
-use iced::{Center, Element, Fill, Font, Task, Theme, Window};
+use iced::{Center, Fill, Font, Task, Theme, Widget, Window};
 
 use std::ffi;
 use std::io;
@@ -15,15 +14,15 @@ use std::sync::Arc;
 pub fn main() -> iced::Result {
     iced::application(Editor::new, Editor::update, Editor::view)
         .theme(Editor::theme)
-        .font(include_bytes!("../fonts/icons.ttf").as_slice())
-        .default_font(Font::MONOSPACE)
+        .fonts([include_bytes!("../fonts/icons.ttf").as_slice()])
+        .font(Font::MONOSPACE)
         .run()
 }
 
 struct Editor {
     file: Option<PathBuf>,
     content: text_editor::Content,
-    theme: highlighter::Theme,
+    theme: Theme,
     word_wrap: bool,
     is_loading: bool,
     is_dirty: bool,
@@ -32,7 +31,7 @@ struct Editor {
 #[derive(Debug, Clone)]
 enum Message {
     ActionPerformed(text_editor::Action),
-    ThemeSelected(highlighter::Theme),
+    ThemeSelected(Theme),
     WordWrapToggled(bool),
     NewFile,
     OpenFile,
@@ -47,17 +46,14 @@ impl Editor {
             Self {
                 file: None,
                 content: text_editor::Content::new(),
-                theme: highlighter::Theme::SolarizedDark,
+                theme: Theme::CatppuccinMocha,
                 word_wrap: true,
                 is_loading: true,
                 is_dirty: false,
             },
             Task::batch([
                 Task::perform(
-                    load_file(concat!(
-                        env!("CARGO_MANIFEST_DIR"),
-                        "/src/main.rs",
-                    )),
+                    load_file(concat!(env!("CARGO_MANIFEST_DIR"), "/src/main.rs",)),
                     Message::FileOpened,
                 ),
                 operation::focus(EDITOR),
@@ -129,10 +125,7 @@ impl Editor {
                         text.push_str(ending.as_str());
                     }
 
-                    Task::perform(
-                        save_file(self.file.clone(), text),
-                        Message::FileSaved,
-                    )
+                    Task::perform(save_file(self.file.clone(), text), Message::FileSaved)
                 }
             }
             Message::FileSaved(result) => {
@@ -148,7 +141,7 @@ impl Editor {
         }
     }
 
-    fn view(&self) -> Element<'_, Message> {
+    fn view(&self) -> impl Widget<Message> {
         let controls = row![
             action(new_icon(), "New file", Some(Message::NewFile)),
             action(
@@ -165,13 +158,8 @@ impl Editor {
             toggler(self.word_wrap)
                 .label("Word Wrap")
                 .on_toggle(Message::WordWrapToggled),
-            pick_list(
-                highlighter::Theme::ALL,
-                Some(self.theme),
-                Message::ThemeSelected
-            )
-            .text_size(14)
-            .padding([5, 10])
+            pick_list(Some(&self.theme), Theme::ALL, Theme::to_string)
+                .on_select(Message::ThemeSelected),
         ]
         .spacing(10)
         .align_y(Center);
@@ -192,11 +180,7 @@ impl Editor {
             text({
                 let cursor = self.content.cursor();
 
-                format!(
-                    "{}:{}",
-                    cursor.position.line + 1,
-                    cursor.position.column + 1
-                )
+                format!("{}:{}", cursor.position.line + 1, cursor.position.index + 1)
             })
         ]
         .spacing(10);
@@ -218,16 +202,11 @@ impl Editor {
                         .and_then(Path::extension)
                         .and_then(ffi::OsStr::to_str)
                         .unwrap_or("rs"),
-                    self.theme,
                 )
                 .key_binding(|key_press| {
                     match key_press.key.as_ref() {
-                        keyboard::Key::Character("s")
-                            if key_press.modifiers.command() =>
-                        {
-                            Some(text_editor::Binding::Custom(
-                                Message::SaveFile,
-                            ))
+                        keyboard::Key::Character("s") if key_press.modifiers.command() => {
+                            Some(text_editor::Binding::Custom(Message::SaveFile))
                         }
                         _ => text_editor::Binding::from_key_press(key_press),
                     }
@@ -236,15 +215,10 @@ impl Editor {
         ]
         .spacing(10)
         .padding(10)
-        .into()
     }
 
     fn theme(&self) -> Theme {
-        if self.theme.is_dark() {
-            Theme::Dark
-        } else {
-            Theme::Light
-        }
+        self.theme.clone()
     }
 }
 
@@ -262,16 +236,13 @@ fn open_file(
         .set_parent(&window);
 
     async move {
-        let picked_file =
-            dialog.pick_file().await.ok_or(Error::DialogClosed)?;
+        let picked_file = dialog.pick_file().await.ok_or(Error::DialogClosed)?;
 
         load_file(picked_file).await
     }
 }
 
-async fn load_file(
-    path: impl Into<PathBuf>,
-) -> Result<(PathBuf, Arc<String>), Error> {
+async fn load_file(path: impl Into<PathBuf>) -> Result<(PathBuf, Arc<String>), Error> {
     let path = path.into();
 
     let contents = tokio::fs::read_to_string(&path)
@@ -282,10 +253,7 @@ async fn load_file(
     Ok((path, contents))
 }
 
-async fn save_file(
-    path: Option<PathBuf>,
-    contents: String,
-) -> Result<PathBuf, Error> {
+async fn save_file(path: Option<PathBuf>, contents: String) -> Result<PathBuf, Error> {
     let path = if let Some(path) = path {
         path
     } else {
@@ -306,10 +274,10 @@ async fn save_file(
 }
 
 fn action<'a, Message: Clone + 'a>(
-    content: impl Into<Element<'a, Message>>,
+    content: impl Widget<Message> + 'a,
     label: &'a str,
     on_press: Option<Message>,
-) -> Element<'a, Message> {
+) -> impl Widget<Message> {
     let action = button(center_x(content).width(30));
 
     if let Some(on_press) = on_press {
@@ -319,31 +287,30 @@ fn action<'a, Message: Clone + 'a>(
             tooltip::Position::FollowCursor,
         )
         .style(container::rounded_box)
-        .into()
+        .boxed()
     } else {
-        action.style(button::secondary).into()
+        action.style(button::secondary).boxed()
     }
 }
 
-fn new_icon<'a, Message>() -> Element<'a, Message> {
+fn new_icon<Message>() -> impl Widget<Message> {
     icon('\u{0e800}')
 }
 
-fn save_icon<'a, Message>() -> Element<'a, Message> {
+fn save_icon<Message>() -> impl Widget<Message> {
     icon('\u{0e801}')
 }
 
-fn open_icon<'a, Message>() -> Element<'a, Message> {
+fn open_icon<Message>() -> impl Widget<Message> {
     icon('\u{0f115}')
 }
 
-fn icon<'a, Message>(codepoint: char) -> Element<'a, Message> {
-    const ICON_FONT: Font = Font::with_name("editor-icons");
+fn icon<Message>(codepoint: char) -> impl Widget<Message> {
+    const ICON_FONT: Font = Font::new("editor-icons");
 
     text(codepoint)
         .font(ICON_FONT)
         .shaping(text::Shaping::Basic)
-        .into()
 }
 
 const EDITOR: &str = "editor";

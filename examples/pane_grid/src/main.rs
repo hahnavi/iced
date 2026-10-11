@@ -1,9 +1,7 @@
 use iced::keyboard;
 use iced::widget::pane_grid::{self, PaneGrid};
-use iced::widget::{
-    button, center_y, column, container, responsive, row, scrollable, text,
-};
-use iced::{Center, Color, Element, Fill, Size, Subscription};
+use iced::widget::{button, center_y, column, container, responsive, row, scrollable, text};
+use iced::{Center, Color, Fill, Fit, Size, Subscription, Widget};
 
 pub fn main() -> iced::Result {
     iced::application(Example::default, Example::update, Example::view)
@@ -46,8 +44,7 @@ impl Example {
     fn update(&mut self, message: Message) {
         match message {
             Message::Split(axis, pane) => {
-                let result =
-                    self.panes.split(axis, pane, Pane::new(self.panes_created));
+                let result = self.panes.split(axis, pane, Pane::new(self.panes_created));
 
                 if let Some((pane, _)) = result {
                     self.focus = Some(pane);
@@ -57,11 +54,7 @@ impl Example {
             }
             Message::SplitFocused(axis) => {
                 if let Some(pane) = self.focus {
-                    let result = self.panes.split(
-                        axis,
-                        pane,
-                        Pane::new(self.panes_created),
-                    );
+                    let result = self.panes.split(axis, pane, Pane::new(self.panes_created));
 
                     if let Some((pane, _)) = result {
                         self.focus = Some(pane);
@@ -83,10 +76,7 @@ impl Example {
             Message::Resized(pane_grid::ResizeEvent { split, ratio }) => {
                 self.panes.resize(split, ratio);
             }
-            Message::Dragged(pane_grid::DragEvent::Dropped {
-                pane,
-                target,
-            }) => {
+            Message::Dragged(pane_grid::DragEvent::Dropped { pane, target }) => {
                 self.panes.drop(pane, target);
             }
             Message::Dragged(_) => {}
@@ -118,8 +108,7 @@ impl Example {
 
     fn subscription(&self) -> Subscription<Message> {
         keyboard::listen().filter_map(|event| {
-            let keyboard::Event::KeyPressed { key, modifiers, .. } = event
-            else {
+            let keyboard::Event::KeyPressed { key, modifiers, .. } = event else {
                 return None;
             };
 
@@ -131,18 +120,16 @@ impl Example {
         })
     }
 
-    fn view(&self) -> Element<'_, Message> {
+    fn view(&self) -> impl Widget<Message> {
         let focus = self.focus;
         let total_panes = self.panes.len();
 
         let pane_grid = PaneGrid::new(&self.panes, |id, pane, is_maximized| {
             let is_focused = focus == Some(id);
 
-            let pin_button = button(
-                text(if pane.is_pinned { "Unpin" } else { "Pin" }).size(14),
-            )
-            .on_press(Message::TogglePin(id))
-            .padding(3);
+            let pin_button = button(text(if pane.is_pinned { "Unpin" } else { "Pin" }).size(14))
+                .on_press(Message::TogglePin(id))
+                .padding(3);
 
             let title = row![
                 pin_button,
@@ -157,22 +144,15 @@ impl Example {
 
             let title_bar = pane_grid::TitleBar::new(title)
                 .controls(pane_grid::Controls::dynamic(
-                    view_controls(
-                        id,
-                        total_panes,
-                        pane.is_pinned,
-                        is_maximized,
-                    ),
+                    view_controls(id, total_panes, pane.is_pinned, is_maximized),
                     button(text("X").size(14))
                         .style(button::danger)
                         .padding(3)
-                        .on_press_maybe(
-                            if total_panes > 1 && !pane.is_pinned {
-                                Some(Message::Close(id))
-                            } else {
-                                None
-                            },
-                        ),
+                        .on_press_maybe(if total_panes > 1 && !pane.is_pinned {
+                            Some(Message::Close(id))
+                        } else {
+                            None
+                        }),
                 ))
                 .padding(10)
                 .style(if is_focused {
@@ -198,7 +178,7 @@ impl Example {
         .on_drag(Message::Dragged)
         .on_resize(10, Message::Resized);
 
-        container(pane_grid).padding(10).into()
+        container(pane_grid).padding(10)
     }
 }
 
@@ -257,15 +237,14 @@ impl Pane {
     }
 }
 
-fn view_content<'a>(
+fn view_content(
     pane: pane_grid::Pane,
     total_panes: usize,
     is_pinned: bool,
     size: Size,
-) -> Element<'a, Message> {
+) -> impl Widget<Message> {
     let button = |label, message| {
         button(text(label).width(Fill).align_x(Center).size(16))
-            .width(Fill)
             .padding(8)
             .on_press(message)
     };
@@ -286,22 +265,22 @@ fn view_content<'a>(
         }
     ]
     .spacing(5)
-    .max_width(160);
+    .width(Fit.max(160));
 
-    let content =
-        column![text!("{}x{}", size.width, size.height).size(24), controls,]
-            .spacing(10)
-            .align_x(Center);
+    let content = column![text!("{}x{}", size.width, size.height).size(24), controls]
+        .spacing(10)
+        .width(Fill)
+        .align_x(Center);
 
-    center_y(scrollable(content)).padding(5).into()
+    center_y(scrollable(content)).padding(5)
 }
 
-fn view_controls<'a>(
+fn view_controls(
     pane: pane_grid::Pane,
     total_panes: usize,
     is_pinned: bool,
     is_maximized: bool,
-) -> Element<'a, Message> {
+) -> impl Widget<Message> {
     let maximize = if total_panes > 1 {
         let (content, message) = if is_maximized {
             ("Restore", Message::Restore)
@@ -328,7 +307,7 @@ fn view_controls<'a>(
             None
         });
 
-    row![maximize, close].spacing(5).into()
+    row![maximize, close].spacing(5)
 }
 
 mod style {
@@ -336,7 +315,7 @@ mod style {
     use iced::{Border, Theme};
 
     pub fn title_bar_active(theme: &Theme) -> container::Style {
-        let palette = theme.extended_palette();
+        let palette = theme.palette();
 
         container::Style {
             text_color: Some(palette.background.strong.text),
@@ -346,7 +325,7 @@ mod style {
     }
 
     pub fn title_bar_focused(theme: &Theme) -> container::Style {
-        let palette = theme.extended_palette();
+        let palette = theme.palette();
 
         container::Style {
             text_color: Some(palette.primary.strong.text),
@@ -356,7 +335,7 @@ mod style {
     }
 
     pub fn pane_active(theme: &Theme) -> container::Style {
-        let palette = theme.extended_palette();
+        let palette = theme.palette();
 
         container::Style {
             background: Some(palette.background.weak.color.into()),
@@ -370,7 +349,7 @@ mod style {
     }
 
     pub fn pane_focused(theme: &Theme) -> container::Style {
-        let palette = theme.extended_palette();
+        let palette = theme.palette();
 
         container::Style {
             background: Some(palette.background.weak.color.into()),

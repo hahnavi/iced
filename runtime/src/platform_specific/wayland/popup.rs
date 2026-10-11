@@ -3,12 +3,10 @@ use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
-use cctk::sctk::reexports::protocols::xdg::shell::client::xdg_positioner::{
-    Anchor, Gravity,
-};
+use cctk::sctk::reexports::protocols::xdg::shell::client::xdg_positioner::{Anchor, Gravity};
 use iced_core::layout::Limits;
 use iced_core::window::Id;
-use iced_core::{Element, Rectangle};
+use iced_core::{Element, Rectangle, Size};
 
 /// Popup creation details
 #[derive(Debug, Clone)]
@@ -82,11 +80,7 @@ impl Default for SctkPositioner {
     fn default() -> Self {
         Self {
             size: None,
-            size_limits: Limits::NONE
-                .min_height(1.0)
-                .min_width(1.0)
-                .max_width(300.0)
-                .max_height(1080.0),
+            size_limits: Limits::new(Size::new(1.0, 1.0), Size::new(300.0, 1080.0)),
             anchor_rect: Rectangle {
                 x: 0,
                 y: 0,

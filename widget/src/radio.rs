@@ -3,7 +3,7 @@
 //! # Example
 //! ```no_run
 //! # mod iced { pub mod widget { pub use iced_widget::*; } pub use iced_widget::Renderer; pub use iced_widget::core::*; }
-//! # pub type Element<'a, Message> = iced_widget::core::Element<'a, Message, iced_widget::Theme, iced_widget::Renderer>;
+//! # use iced::widget::Widget;
 //! #
 //! use iced::widget::{column, radio};
 //!
@@ -24,7 +24,7 @@
 //!     All,
 //! }
 //!
-//! fn view(state: &State) -> Element<'_, Message> {
+//! fn view(state: &State) -> impl Widget<Message> {
 //!     let a = radio(
 //!         "A",
 //!         Choice::A,
@@ -53,7 +53,7 @@
 //!         Message::RadioSelected
 //!     );
 //!
-//!     column![a, b, c, all].into()
+//!     column![a, b, c, all]
 //! }
 //! ```
 use crate::core::alignment;
@@ -67,8 +67,7 @@ use crate::core::widget;
 use crate::core::widget::tree::{self, Tree};
 use crate::core::window;
 use crate::core::{
-    Background, Clipboard, Color, Element, Event, Layout, Length, Pixels,
-    Rectangle, Shell, Size, Theme, Widget,
+    Background, Color, Event, Font, Layout, Length, Pixels, Rectangle, Shell, Size, Theme, Widget,
 };
 
 /// A circular button representing a choice.
@@ -76,7 +75,7 @@ use crate::core::{
 /// # Example
 /// ```no_run
 /// # mod iced { pub mod widget { pub use iced_widget::*; } pub use iced_widget::Renderer; pub use iced_widget::core::*; }
-/// # pub type Element<'a, Message> = iced_widget::core::Element<'a, Message, iced_widget::Theme, iced_widget::Renderer>;
+/// # use iced::widget::Widget;
 /// #
 /// use iced::widget::{column, radio};
 ///
@@ -97,7 +96,7 @@ use crate::core::{
 ///     All,
 /// }
 ///
-/// fn view(state: &State) -> Element<'_, Message> {
+/// fn view(state: &State) -> impl Widget<Message> {
 ///     let a = radio(
 ///         "A",
 ///         Choice::A,
@@ -126,13 +125,12 @@ use crate::core::{
 ///         Message::RadioSelected
 ///     );
 ///
-///     column![a, b, c, all].into()
+///     column![a, b, c, all]
 /// }
 /// ```
-pub struct Radio<'a, Message, Theme = crate::Theme, Renderer = crate::Renderer>
+pub struct Radio<'a, Message, Theme = crate::Theme>
 where
     Theme: Catalog,
-    Renderer: text::Renderer,
 {
     is_selected: bool,
     on_click: Message,
@@ -141,20 +139,19 @@ where
     size: f32,
     spacing: f32,
     text_size: Option<Pixels>,
-    text_line_height: text::LineHeight,
-    text_shaping: text::Shaping,
-    text_wrapping: text::Wrapping,
-    text_ellipsize: text::Ellipsize,
-    font: Option<Renderer::Font>,
+    line_height: Option<text::LineHeight>,
+    shaping: text::Shaping,
+    wrapping: text::Wrapping,
+    text_ellipsize: text::Ellipsis,
+    font: Option<Font>,
     class: Theme::Class<'a>,
     last_status: Option<Status>,
 }
 
-impl<'a, Message, Theme, Renderer> Radio<'a, Message, Theme, Renderer>
+impl<'a, Message, Theme> Radio<'a, Message, Theme>
 where
     Message: Clone,
     Theme: Catalog,
-    Renderer: text::Renderer,
 {
     /// The default size of a [`Radio`] button.
     pub const DEFAULT_SIZE: f32 = 16.0;
@@ -170,12 +167,7 @@ where
     ///   * the current selected value
     ///   * a function that will be called when the [`Radio`] is selected. It
     ///     receives the value of the radio and must produce a `Message`.
-    pub fn new<F, V>(
-        label: impl Into<String>,
-        value: V,
-        selected: Option<V>,
-        f: F,
-    ) -> Self
+    pub fn new<F, V>(label: impl Into<String>, value: V, selected: Option<V>, f: F) -> Self
     where
         V: Eq + Copy,
         F: FnOnce(V) -> Message,
@@ -188,10 +180,10 @@ where
             size: Self::DEFAULT_SIZE,
             spacing: Self::DEFAULT_SPACING,
             text_size: None,
-            text_line_height: text::LineHeight::default(),
-            text_shaping: text::Shaping::Advanced,
-            text_wrapping: text::Wrapping::default(),
-            text_ellipsize: text::Ellipsize::default(),
+            line_height: None,
+            shaping: text::Shaping::default(),
+            wrapping: text::Wrapping::default(),
+            text_ellipsize: text::Ellipsis::None,
             font: None,
             class: Theme::default(),
             last_status: None,
@@ -223,34 +215,31 @@ where
     }
 
     /// Sets the text [`text::LineHeight`] of the [`Radio`] button.
-    pub fn text_line_height(
-        mut self,
-        line_height: impl Into<text::LineHeight>,
-    ) -> Self {
-        self.text_line_height = line_height.into();
+    pub fn line_height(mut self, line_height: impl Into<text::LineHeight>) -> Self {
+        self.line_height = Some(line_height.into());
         self
     }
 
     /// Sets the [`text::Shaping`] strategy of the [`Radio`] button.
-    pub fn text_shaping(mut self, shaping: text::Shaping) -> Self {
-        self.text_shaping = shaping;
+    pub fn shaping(mut self, shaping: text::Shaping) -> Self {
+        self.shaping = shaping;
         self
     }
 
     /// Sets the [`text::Wrapping`] strategy of the [`Radio`] button.
-    pub fn text_wrapping(mut self, wrapping: text::Wrapping) -> Self {
-        self.text_wrapping = wrapping;
+    pub fn wrapping(mut self, wrapping: text::Wrapping) -> Self {
+        self.wrapping = wrapping;
         self
     }
 
-    /// Sets the [`text::Ellipsize`] strategy of the [`Radio`] button.
-    pub fn text_ellipsize(mut self, ellipsize: text::Ellipsize) -> Self {
+    /// Sets the [`text::Ellipsis`] strategy of the [`Radio`] button.
+    pub fn text_ellipsize(mut self, ellipsize: text::Ellipsis) -> Self {
         self.text_ellipsize = ellipsize;
         self
     }
 
     /// Sets the text font of the [`Radio`] button.
-    pub fn font(mut self, font: impl Into<Renderer::Font>) -> Self {
+    pub fn font(mut self, font: impl Into<Font>) -> Self {
         self.font = Some(font.into());
         self
     }
@@ -274,19 +263,20 @@ where
     }
 }
 
-impl<Message, Theme, Renderer> Widget<Message, Theme, Renderer>
-    for Radio<'_, Message, Theme, Renderer>
+impl<Message, Theme> widget::Meta for Radio<'_, Message, Theme> where Theme: Catalog {}
+
+impl<Message, Theme, Renderer> Widget<Message, Theme, Renderer> for Radio<'_, Message, Theme>
 where
     Message: Clone,
     Theme: Catalog,
     Renderer: text::Renderer,
 {
     fn tag(&self) -> tree::Tag {
-        tree::Tag::of::<widget::text::State<Renderer::Paragraph>>()
+        tree::Tag::of::<text::paragraph::Plain<Renderer::Paragraph>>()
     }
 
     fn state(&self) -> tree::State {
-        tree::State::new(widget::text::State::<Renderer::Paragraph>::default())
+        tree::State::new(text::paragraph::Plain::<Renderer::Paragraph>::default())
     }
 
     fn size(&self) -> Size<Length> {
@@ -296,61 +286,60 @@ where
         }
     }
 
-    fn layout(
-        &mut self,
-        tree: &mut Tree,
-        renderer: &Renderer,
-        limits: &layout::Limits,
-    ) -> layout::Node {
-        layout::next_to_each_other(
-            &limits.width(self.width),
-            self.spacing,
-            |_| layout::Node::new(Size::new(self.size, self.size)),
-            |limits| {
-                let state = tree
-                    .state
-                    .downcast_mut::<widget::text::State<Renderer::Paragraph>>();
+    fn diff(&mut self, tree: &mut Tree) {
+        // The children of the tree are the radio and the label; they only
+        // carry their geometry, so no state is needed.
+        tree.children.resize_with(2, Tree::empty);
+    }
 
-                widget::text::layout(
-                    state,
-                    renderer,
-                    limits,
-                    &self.label,
-                    widget::text::Format {
-                        width: self.width,
-                        height: Length::Shrink,
-                        line_height: self.text_line_height,
-                        size: self.text_size,
-                        font: self.font,
-                        align_x: text::Alignment::Default,
-                        align_y: alignment::Vertical::Top,
-                        shaping: self.text_shaping,
-                        wrapping: self.text_wrapping,
-                        ellipsize: self.text_ellipsize,
-                    },
-                )
+    fn layout(&mut self, tree: &mut Tree, renderer: &Renderer, limits: &layout::Limits) {
+        let limits = limits.width(self.width);
+
+        let radio = Size::new(self.size, self.size);
+
+        let state = tree
+            .state
+            .downcast_mut::<text::paragraph::Plain<Renderer::Paragraph>>();
+
+        let label = widget::text::layout(
+            state,
+            renderer,
+            &limits.shrink(Size::new(radio.width + self.spacing, 0.0)),
+            &self.label,
+            widget::text::Format {
+                width: self.width,
+                height: Length::Shrink,
+                line_height: self.line_height,
+                size: self.text_size,
+                font: self.font,
+                align_x: text::Alignment::Default,
+                align_y: alignment::Vertical::Top,
+                shaping: self.shaping,
+                wrapping: self.wrapping,
+                ellipsis: self.text_ellipsize,
             },
-        )
+        );
+
+        layout::next_to_each_other(tree, radio, label, self.spacing);
     }
 
     fn update(
         &mut self,
         _tree: &mut Tree,
         event: &Event,
-        layout: Layout<'_>,
+        layout: Layout,
         cursor: mouse::Cursor,
         _renderer: &Renderer,
-        _clipboard: &mut dyn Clipboard,
         shell: &mut Shell<'_, Message>,
         _viewport: &Rectangle,
     ) {
         match event {
             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left))
-            | Event::Touch(touch::Event::FingerPressed { .. }) => {
-                if cursor.is_over(layout.bounds()) {
-                    shell.publish(self.on_click.clone());
-                    shell.capture_event();
-                }
+            | Event::Touch(touch::Event::FingerPressed { .. })
+                if cursor.is_over(layout.bounds()) =>
+            {
+                shell.publish(self.on_click.clone());
+                shell.capture_event();
             }
             _ => {}
         }
@@ -379,7 +368,7 @@ where
     fn mouse_interaction(
         &self,
         _tree: &Tree,
-        layout: Layout<'_>,
+        layout: Layout,
         cursor: mouse::Cursor,
         _viewport: &Rectangle,
         _renderer: &Renderer,
@@ -397,11 +386,11 @@ where
         renderer: &mut Renderer,
         theme: &Theme,
         defaults: &renderer::Style,
-        layout: Layout<'_>,
+        layout: Layout,
         _cursor: mouse::Cursor,
         viewport: &Rectangle,
     ) {
-        let mut children = layout.children();
+        let mut children = layout.iter(&tree.children);
 
         let style = theme.style(
             &self.class,
@@ -410,74 +399,59 @@ where
             }),
         );
 
-        {
-            let layout = children.next().unwrap();
-            let bounds = layout.bounds();
+        let state = tree
+            .state
+            .downcast_ref::<text::paragraph::Plain<Renderer::Paragraph>>();
 
-            let size = bounds.width;
-            let dot_size = size / 2.0;
+        let (radio_layout, _) = children.next().unwrap();
+        let bounds = radio_layout.bounds();
 
+        let size = bounds.width;
+        let dot_size = size / 2.0;
+
+        renderer.fill_quad(
+            renderer::Quad {
+                bounds,
+                border: Border {
+                    radius: (size / 2.0).into(),
+                    width: style.border_width,
+                    color: style.border_color,
+                },
+                ..renderer::Quad::default()
+            },
+            style.background,
+        );
+
+        if self.is_selected {
             renderer.fill_quad(
                 renderer::Quad {
-                    bounds,
-                    border: Border {
-                        radius: (size / 2.0).into(),
-                        width: style.border_width,
-                        color: style.border_color,
+                    bounds: Rectangle {
+                        x: bounds.x + dot_size / 2.0,
+                        y: bounds.y + dot_size / 2.0,
+                        width: bounds.width - dot_size,
+                        height: bounds.height - dot_size,
                     },
+                    border: border::rounded(dot_size / 2.0),
                     ..renderer::Quad::default()
                 },
-                style.background,
-            );
-
-            if self.is_selected {
-                renderer.fill_quad(
-                    renderer::Quad {
-                        bounds: Rectangle {
-                            x: bounds.x + dot_size / 2.0,
-                            y: bounds.y + dot_size / 2.0,
-                            width: bounds.width - dot_size,
-                            height: bounds.height - dot_size,
-                        },
-                        border: border::rounded(dot_size / 2.0),
-                        ..renderer::Quad::default()
-                    },
-                    style.dot_color,
-                );
-            }
-        }
-
-        {
-            let label_layout = children.next().unwrap();
-            let state: &widget::text::State<Renderer::Paragraph> =
-                tree.state.downcast_ref();
-
-            crate::text::draw(
-                renderer,
-                defaults,
-                label_layout.bounds(),
-                state.raw(),
-                crate::text::Style {
-                    color: style.text_color,
-                    ..crate::text::Style::default()
-                },
-                viewport,
+                style.dot_color,
             );
         }
-    }
-}
 
-impl<'a, Message, Theme, Renderer> From<Radio<'a, Message, Theme, Renderer>>
-    for Element<'a, Message, Theme, Renderer>
-where
-    Message: 'a + Clone,
-    Theme: 'a + Catalog,
-    Renderer: 'a + text::Renderer,
-{
-    fn from(
-        radio: Radio<'a, Message, Theme, Renderer>,
-    ) -> Element<'a, Message, Theme, Renderer> {
-        Element::new(radio)
+        let (label_layout, _) = children.next().unwrap();
+
+        crate::text::draw(
+            renderer,
+            defaults,
+            label_layout.bounds(),
+            state.raw(),
+            crate::text::Style {
+                color: style.text_color,
+                selection: None,
+            },
+            theme.selection(),
+            viewport,
+        );
     }
 }
 
@@ -521,6 +495,9 @@ pub trait Catalog {
 
     /// The [`Style`] of a class with the given status.
     fn style(&self, class: &Self::Class<'_>, status: Status) -> Style;
+
+    /// The global selection [`Color`].
+    fn selection(&self) -> Color;
 }
 
 /// A styling function for a [`Radio`].
@@ -536,11 +513,15 @@ impl Catalog for Theme {
     fn style(&self, class: &Self::Class<'_>, status: Status) -> Style {
         class(self, status)
     }
+
+    fn selection(&self) -> Color {
+        self.palette().background.strongest.color
+    }
 }
 
 /// The default style of a [`Radio`] button.
 pub fn default(theme: &Theme, status: Status) -> Style {
-    let palette = theme.extended_palette();
+    let palette = theme.palette();
 
     let active = Style {
         background: Color::TRANSPARENT.into(),

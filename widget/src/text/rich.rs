@@ -1,76 +1,72 @@
 use crate::core::alignment;
+use crate::core::border;
 use crate::core::layout;
 use crate::core::mouse;
 use crate::core::renderer;
-use crate::core::text::{Paragraph, Span};
+use crate::core::text::{Paragraph, Span, Target};
+use crate::core::widget;
+use crate::core::widget::operation;
 use crate::core::widget::text::{
-    self, Alignment, Catalog, Ellipsize, LineHeight, Shaping, Style, StyleFn,
-    Wrapping,
+    self, Alignment, Catalog, Ellipsis, LineHeight, Shaping, Style, StyleFn, Wrapping,
 };
 use crate::core::widget::tree::{self, Tree};
+use crate::core::window;
 use crate::core::{
-    self, Clipboard, Color, Element, Event, Layout, Length, Pixels, Point,
-    Rectangle, Shell, Size, Vector, Widget,
+    self, Border, Color, Event, Font, Layout, Length, Pixels, Point, Rectangle, Shell, Size,
+    Vector, Widget,
 };
 
 /// A bunch of [`Rich`] text.
-pub struct Rich<
-    'a,
-    Link,
-    Message,
-    Theme = crate::Theme,
-    Renderer = crate::Renderer,
-> where
-    Link: Clone + 'static,
-    Theme: Catalog,
-    Renderer: core::text::Renderer,
-{
-    spans: Box<dyn AsRef<[Span<'a, Link, Renderer::Font>]> + 'a>,
-    size: Option<Pixels>,
-    line_height: LineHeight,
-    width: Length,
-    height: Length,
-    font: Option<Renderer::Font>,
-    align_x: Alignment,
-    align_y: alignment::Vertical,
-    wrapping: Wrapping,
-    ellipsize: Ellipsize,
-    class: Theme::Class<'a>,
-    hovered_link: Option<usize>,
-    on_link_click: Option<Box<dyn Fn(Link) -> Message + 'a>>,
-}
-
-impl<'a, Link, Message, Theme, Renderer>
-    Rich<'a, Link, Message, Theme, Renderer>
+pub struct Rich<'a, Link, Message, Theme = crate::Theme>
 where
     Link: Clone + 'static,
     Theme: Catalog,
-    Renderer: core::text::Renderer,
-    Renderer::Font: 'a,
+{
+    spans: Box<dyn AsRef<[Span<'a, Link>]> + 'a>,
+    size: Option<Pixels>,
+    line_height: Option<LineHeight>,
+    width: Length,
+    height: Length,
+    font: Option<Font>,
+    align_x: Alignment,
+    align_y: alignment::Vertical,
+    wrapping: Wrapping,
+    ellipsis: Ellipsis,
+    class: Theme::Class<'a>,
+    on_link_click: Option<Box<dyn Fn(Link) -> Message + 'a>>,
+    selectable: bool,
+    hovered_link: Option<usize>,
+    is_hovered: bool,
+}
+
+impl<'a, Link, Message, Theme> Rich<'a, Link, Message, Theme>
+where
+    Link: Clone + 'static,
+    Theme: Catalog,
 {
     /// Creates a new empty [`Rich`] text.
     pub fn new() -> Self {
         Self {
             spans: Box::new([]),
             size: None,
-            line_height: LineHeight::default(),
-            width: Length::Shrink,
-            height: Length::Shrink,
+            line_height: None,
+            width: Length::Fit,
+            height: Length::Fit,
             font: None,
             align_x: Alignment::Default,
             align_y: alignment::Vertical::Top,
             wrapping: Wrapping::default(),
-            ellipsize: Ellipsize::default(),
+            ellipsis: Ellipsis::default(),
             class: Theme::default(),
-            hovered_link: None,
             on_link_click: None,
+            selectable: false,
+            hovered_link: None,
+            is_hovered: false,
         }
     }
 
     /// Creates a new [`Rich`] text with the given text spans.
-    pub fn with_spans(
-        spans: impl AsRef<[Span<'a, Link, Renderer::Font>]> + 'a,
-    ) -> Self {
+    pub fn with_spans(spans: impl AsRef<[Span<'a, Link>]> + 'a) -> Self {
         Self {
             spans: Box::new(spans),
             ..Self::new()
@@ -85,12 +81,12 @@ where
 
     /// Sets the default [`LineHeight`] of the [`Rich`] text.
     pub fn line_height(mut self, line_height: impl Into<LineHeight>) -> Self {
-        self.line_height = line_height.into();
+        self.line_height = Some(line_height.into());
         self
     }
 
     /// Sets the default font of the [`Rich`] text.
-    pub fn font(mut self, font: impl Into<Renderer::Font>) -> Self {
+    pub fn font(mut self, font: impl Into<Font>) -> Self {
         self.font = Some(font.into());
         self
     }
@@ -120,10 +116,7 @@ where
     }
 
     /// Sets the [`alignment::Vertical`] of the [`Rich`] text.
-    pub fn align_y(
-        mut self,
-        alignment: impl Into<alignment::Vertical>,
-    ) -> Self {
+    pub fn align_y(mut self, alignment: impl Into<alignment::Vertical>) -> Self {
         self.align_y = alignment.into();
         self
     }
@@ -134,23 +127,28 @@ where
         self
     }
 
+    /// Sets the [`Ellipsis`] strategy of the [`Rich`] text.
+    pub fn ellipsis(mut self, ellipsis: Ellipsis) -> Self {
+        self.ellipsis = ellipsis;
+        self
+    }
+
     /// Sets the message that will be produced when a link of the [`Rich`] text
     /// is clicked.
     ///
     /// If the spans of the [`Rich`] text contain no links, you may need to call
     /// this method with `on_link_click(never)` in order for the compiler to infer
     /// the proper `Link` generic type.
-    pub fn on_link_click(
-        mut self,
-        on_link_click: impl Fn(Link) -> Message + 'a,
-    ) -> Self {
+    pub fn on_link_click(mut self, on_link_click: impl Fn(Link) -> Message + 'a) -> Self {
         self.on_link_click = Some(Box::new(on_link_click));
         self
     }
 
-    /// Sets the [`Ellipsize`] strategy of the [`Rich`] text.
-    pub fn ellipsize(mut self, ellipsize: Ellipsize) -> Self {
-        self.ellipsize = ellipsize;
+    /// Sets whether the [`Rich`] text can be selected.
+    ///
+    /// By default, it is `false`.
+    pub fn selectable(mut self, selectable: bool) -> Self {
+        self.selectable = selectable;
         self
     }
 
@@ -181,7 +179,7 @@ where
 
         self.style(move |_theme| Style {
             color,
-            ..Style::default()
+            selection: None,
         })
     }
 
@@ -194,13 +192,10 @@ where
     }
 }
 
-impl<'a, Link, Message, Theme, Renderer> Default
-    for Rich<'a, Link, Message, Theme, Renderer>
+impl<'a, Link, Message, Theme> Default for Rich<'a, Link, Message, Theme>
 where
     Link: Clone + 'a,
     Theme: Catalog,
-    Renderer: core::text::Renderer,
-    Renderer::Font: 'a,
 {
     fn default() -> Self {
         Self::new()
@@ -208,13 +203,20 @@ where
 }
 
 struct State<Link, P: Paragraph> {
-    spans: Vec<Span<'static, Link, P::Font>>,
+    spans: Vec<Span<'static, Link>>,
     span_pressed: Option<usize>,
     paragraph: P,
 }
 
+impl<Link, Message, Theme> widget::Meta for Rich<'_, Link, Message, Theme>
+where
+    Link: Clone + 'static,
+    Theme: Catalog,
+{
+}
+
 impl<Link, Message, Theme, Renderer> Widget<Message, Theme, Renderer>
-    for Rich<'_, Link, Message, Theme, Renderer>
+    for Rich<'_, Link, Message, Theme>
 where
     Link: Clone + 'static,
     Theme: Catalog,
@@ -239,13 +241,8 @@ where
         }
     }
 
-    fn layout(
-        &mut self,
-        tree: &mut Tree,
-        renderer: &Renderer,
-        limits: &layout::Limits,
-    ) -> layout::Node {
-        layout(
+    fn layout(&mut self, tree: &mut Tree, renderer: &Renderer, limits: &layout::Limits) {
+        tree.size = layout(
             tree.state
                 .downcast_mut::<State<Link, Renderer::Paragraph>>(),
             renderer,
@@ -259,8 +256,8 @@ where
             self.align_x,
             self.align_y,
             self.wrapping,
-            self.ellipsize,
-        )
+            self.ellipsis,
+        );
     }
 
     fn draw(
@@ -269,7 +266,7 @@ where
         renderer: &mut Renderer,
         theme: &Theme,
         defaults: &renderer::Style,
-        layout: Layout<'_>,
+        layout: Layout,
         _cursor: mouse::Cursor,
         viewport: &Rectangle,
     ) {
@@ -282,98 +279,49 @@ where
             .downcast_ref::<State<Link, Renderer::Paragraph>>();
 
         let style = theme.style(&self.class);
+        let translation = layout.position() - Point::ORIGIN;
+        let mut has_decorations = self.hovered_link.is_some();
 
         for (index, span) in self.spans.as_ref().as_ref().iter().enumerate() {
-            let is_hovered_link = self.on_link_click.is_some()
-                && Some(index) == self.hovered_link;
-
-            if span.highlight.is_some()
-                || span.underline
-                || span.strikethrough
-                || is_hovered_link
-            {
-                let translation = layout.position() - Point::ORIGIN;
+            if let Some(highlight) = span.highlight {
                 let regions = state.paragraph.span_bounds(index);
 
-                if let Some(highlight) = span.highlight {
-                    for bounds in &regions {
-                        let bounds = Rectangle::new(
-                            bounds.position()
-                                - Vector::new(
-                                    span.padding.left,
-                                    span.padding.top,
-                                ),
-                            bounds.size()
-                                + Size::new(span.padding.x(), span.padding.y()),
-                        );
+                for (i, bounds) in regions.iter().enumerate() {
+                    let starts = i == 0;
+                    let ends = i + 1 == regions.len();
 
-                        renderer.fill_quad(
-                            renderer::Quad {
-                                bounds: bounds + translation,
-                                border: highlight.border,
-                                ..Default::default()
+                    // The horizontal padding belongs to the start and end
+                    // of the span, not to each of its lines
+                    let left = if starts { span.padding.left } else { 0.0 };
+                    let right = if ends { span.padding.right } else { 0.0 };
+
+                    let bounds = Rectangle::new(
+                        bounds.position() - Vector::new(left, span.padding.top),
+                        bounds.size() + Size::new(left + right, span.padding.y()),
+                    );
+
+                    let radius = border::Radius {
+                        top_left: highlight.border.radius.top_left * f32::from(starts),
+                        bottom_left: highlight.border.radius.bottom_left * f32::from(starts),
+                        top_right: highlight.border.radius.top_right * f32::from(ends),
+                        bottom_right: highlight.border.radius.bottom_right * f32::from(ends),
+                    };
+
+                    renderer.fill_quad(
+                        renderer::Quad {
+                            bounds: bounds + translation,
+                            border: Border {
+                                radius,
+                                ..highlight.border
                             },
-                            highlight.background,
-                        );
-                    }
-                }
-
-                if span.underline || span.strikethrough || is_hovered_link {
-                    let size = span
-                        .size
-                        .or(self.size)
-                        .unwrap_or(renderer.default_size())
-                        * crate::core::text::text_scale();
-
-                    let line_height = span
-                        .line_height
-                        .unwrap_or(self.line_height)
-                        .to_absolute(size);
-
-                    let color = span
-                        .color
-                        .or(style.color)
-                        .unwrap_or(defaults.text_color);
-
-                    let baseline = translation
-                        + Vector::new(
-                            0.0,
-                            size.0 + (line_height.0 - size.0) / 2.0,
-                        );
-
-                    if span.underline || is_hovered_link {
-                        for bounds in &regions {
-                            renderer.fill_quad(
-                                renderer::Quad {
-                                    bounds: Rectangle::new(
-                                        bounds.position() + baseline
-                                            - Vector::new(0.0, size.0 * 0.08),
-                                        Size::new(bounds.width, 1.0),
-                                    ),
-                                    ..Default::default()
-                                },
-                                color,
-                            );
-                        }
-                    }
-
-                    if span.strikethrough {
-                        for bounds in &regions {
-                            renderer.fill_quad(
-                                renderer::Quad {
-                                    bounds: Rectangle::new(
-                                        bounds.position() + baseline
-                                            - Vector::new(0.0, size.0 / 2.0),
-                                        Size::new(bounds.width, 1.0),
-                                    ),
-                                    ..Default::default()
-                                },
-                                color,
-                            );
-                        }
-                    }
+                            ..Default::default()
+                        },
+                        highlight.background,
+                    );
                 }
             }
+
+            has_decorations |= span.underline || span.strikethrough;
         }
 
         text::draw(
@@ -382,49 +330,112 @@ where
             layout.bounds(),
             &state.paragraph,
             style,
+            theme.selection(),
             viewport,
         );
+
+        if !has_decorations {
+            return;
+        }
+
+        for (index, span) in self.spans.as_ref().as_ref().iter().enumerate() {
+            let is_hovered_link = self.on_link_click.is_some() && Some(index) == self.hovered_link;
+
+            if span.underline || span.strikethrough || is_hovered_link {
+                let regions = state.paragraph.span_bounds(index);
+                let text_size = span.size.or(self.size).unwrap_or(renderer.text_size());
+                let text_scale = core::text::text_scale();
+                let size = text_size.0 * text_scale;
+
+                let line_height = span
+                    .line_height
+                    .or(self.line_height)
+                    .unwrap_or_else(|| renderer.line_height())
+                    .to_absolute(text_size)
+                    .0
+                    * text_scale;
+
+                let color = span.color.or(style.color).unwrap_or(defaults.text_color);
+
+                let baseline = translation + Vector::new(0.0, size + (line_height - size) / 2.0);
+
+                if span.underline || is_hovered_link {
+                    for bounds in &regions {
+                        renderer.fill_quad(
+                            renderer::Quad {
+                                bounds: Rectangle::new(
+                                    bounds.position() + baseline,
+                                    Size::new(bounds.width, 1.0),
+                                ),
+                                ..Default::default()
+                            },
+                            color,
+                        );
+                    }
+                }
+
+                if span.strikethrough {
+                    for bounds in &regions {
+                        renderer.fill_quad(
+                            renderer::Quad {
+                                bounds: Rectangle::new(
+                                    bounds.position() + baseline - Vector::new(0.0, size / 2.0),
+                                    Size::new(bounds.width, 1.0),
+                                ),
+                                ..Default::default()
+                            },
+                            color,
+                        );
+                    }
+                }
+            }
+        }
     }
 
     fn update(
         &mut self,
         tree: &mut Tree,
         event: &Event,
-        layout: Layout<'_>,
+        layout: Layout,
         cursor: mouse::Cursor,
         _renderer: &Renderer,
-        _clipboard: &mut dyn Clipboard,
         shell: &mut Shell<'_, Message>,
         _viewport: &Rectangle,
     ) {
-        let Some(on_link_clicked) = &self.on_link_click else {
-            return;
-        };
+        match event {
+            Event::Mouse(mouse::Event::CursorMoved { .. })
+            | Event::Window(window::Event::RedrawRequested(_)) => {
+                let Some(position) = cursor.position_in(layout.bounds()) else {
+                    self.is_hovered = false;
+                    self.hovered_link = None;
+                    return;
+                };
 
-        let was_hovered = self.hovered_link.is_some();
+                let state = tree
+                    .state
+                    .downcast_ref::<State<Link, Renderer::Paragraph>>();
 
-        if let Some(position) = cursor.position_in(layout.bounds()) {
-            let state = tree
-                .state
-                .downcast_ref::<State<Link, Renderer::Paragraph>>();
+                self.is_hovered = state.paragraph.hit_glyph(position);
 
-            self.hovered_link =
-                state.paragraph.hit_span(position).and_then(|span| {
+                if self.on_link_click.is_none() {
+                    return;
+                };
+
+                let was_hovered = self.hovered_link.is_some();
+
+                self.hovered_link = state.paragraph.hit_span(position).and_then(|span| {
                     if self.spans.as_ref().as_ref().get(span)?.link.is_some() {
                         Some(span)
                     } else {
                         None
                     }
                 });
-        } else {
-            self.hovered_link = None;
-        }
 
-        if was_hovered != self.hovered_link.is_some() {
-            shell.request_redraw();
-        }
-
-        match event {
+                if was_hovered != self.hovered_link.is_some() && !matches!(event, Event::Window(_))
+                {
+                    shell.request_redraw();
+                }
+            }
             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
                 let state = tree
                     .state
@@ -436,6 +447,10 @@ where
                 }
             }
             Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
+                let Some(on_link_clicked) = &self.on_link_click else {
+                    return;
+                };
+
                 let state = tree
                     .state
                     .downcast_mut::<State<Link, Renderer::Paragraph>>();
@@ -464,16 +479,84 @@ where
     fn mouse_interaction(
         &self,
         _tree: &Tree,
-        _layout: Layout<'_>,
+        _layout: Layout,
         _cursor: mouse::Cursor,
         _viewport: &Rectangle,
         _renderer: &Renderer,
     ) -> mouse::Interaction {
         if self.hovered_link.is_some() {
             mouse::Interaction::Pointer
+        } else if self.selectable && self.is_hovered {
+            mouse::Interaction::Text
         } else {
             mouse::Interaction::None
         }
+    }
+
+    fn operate(
+        &mut self,
+        tree: &mut Tree,
+        layout: Layout,
+        _viewport: &Rectangle,
+        _renderer: &Renderer,
+        operation: &mut dyn core::widget::Operation,
+    ) {
+        struct Operand<'a, Link, P: Paragraph> {
+            pub state: &'a mut State<Link, P>,
+            pub layout: Layout,
+            pub selectable: bool,
+        }
+
+        impl<Link, P: Paragraph> operation::Text for Operand<'_, Link, P> {
+            fn text(&self) -> core::text::Fragment<'_> {
+                self.state
+                    .spans
+                    .iter()
+                    .fold(String::new(), |mut text, next| {
+                        text.push_str(&next.text);
+                        text
+                    })
+                    .into()
+            }
+
+            fn select(&mut self, start: Point, end: Point, target: Target) {
+                if !self.selectable {
+                    return;
+                }
+
+                let translation = self.layout.position() - Point::ORIGIN;
+
+                self.state
+                    .paragraph
+                    .select(start - translation, end - translation, target);
+            }
+
+            fn select_all(&mut self) {
+                self.state.paragraph.select_all();
+            }
+
+            fn deselect(&mut self) {
+                self.state.paragraph.deselect();
+            }
+
+            fn copy(&mut self) -> Option<String> {
+                self.state.paragraph.copy()
+            }
+        }
+
+        let state = tree
+            .state
+            .downcast_mut::<State<Link, Renderer::Paragraph>>();
+
+        operation.text(
+            None,
+            layout.bounds(),
+            &mut Operand {
+                state,
+                layout,
+                selectable: self.selectable,
+            },
+        );
     }
 }
 
@@ -483,24 +566,25 @@ fn layout<Link, Renderer>(
     limits: &layout::Limits,
     width: Length,
     height: Length,
-    spans: &[Span<'_, Link, Renderer::Font>],
-    line_height: LineHeight,
+    spans: &[Span<'_, Link>],
+    line_height: Option<LineHeight>,
     size: Option<Pixels>,
-    font: Option<Renderer::Font>,
+    font: Option<Font>,
     align_x: Alignment,
     align_y: alignment::Vertical,
     wrapping: Wrapping,
-    ellipsize: Ellipsize,
-) -> layout::Node
+    ellipsis: Ellipsis,
+) -> Size
 where
     Link: Clone,
     Renderer: core::text::Renderer,
 {
     layout::sized(limits, width, height, |limits| {
-        let bounds = limits.max();
+        let bounds = limits.bounds();
 
-        let size = size.unwrap_or_else(|| renderer.default_size());
-        let font = font.unwrap_or_else(|| renderer.default_font());
+        let size = size.unwrap_or_else(|| renderer.text_size());
+        let font = font.unwrap_or_else(|| renderer.font());
+        let line_height = line_height.unwrap_or_else(|| renderer.line_height());
 
         let text_with_spans = || core::Text {
             content: spans,
@@ -512,12 +596,12 @@ where
             align_y,
             shaping: Shaping::Advanced,
             wrapping,
-            ellipsize,
+            ellipsis,
+            hint_factor: renderer.hint_factor(),
         };
 
         if state.spans != spans {
-            state.paragraph =
-                Renderer::Paragraph::with_spans(text_with_spans());
+            state.paragraph = Renderer::Paragraph::with_spans(text_with_spans());
             state.spans = spans.iter().cloned().map(Span::to_static).collect();
         } else {
             match state.paragraph.compare(core::Text {
@@ -530,15 +614,15 @@ where
                 align_y,
                 shaping: Shaping::Advanced,
                 wrapping,
-                ellipsize,
+                ellipsis,
+                hint_factor: renderer.hint_factor(),
             }) {
                 core::text::Difference::None => {}
                 core::text::Difference::Bounds => {
                     state.paragraph.resize(bounds);
                 }
                 core::text::Difference::Shape => {
-                    state.paragraph =
-                        Renderer::Paragraph::with_spans(text_with_spans());
+                    state.paragraph = Renderer::Paragraph::with_spans(text_with_spans());
                 }
             }
         }
@@ -547,34 +631,12 @@ where
     })
 }
 
-impl<'a, Link, Message, Theme, Renderer>
-    FromIterator<Span<'a, Link, Renderer::Font>>
-    for Rich<'a, Link, Message, Theme, Renderer>
+impl<'a, Link, Message, Theme> FromIterator<Span<'a, Link>> for Rich<'a, Link, Message, Theme>
 where
     Link: Clone + 'a,
     Theme: Catalog,
-    Renderer: core::text::Renderer,
-    Renderer::Font: 'a,
 {
-    fn from_iter<T: IntoIterator<Item = Span<'a, Link, Renderer::Font>>>(
-        spans: T,
-    ) -> Self {
+    fn from_iter<T: IntoIterator<Item = Span<'a, Link>>>(spans: T) -> Self {
         Self::with_spans(spans.into_iter().collect::<Vec<_>>())
-    }
-}
-
-impl<'a, Link, Message, Theme, Renderer>
-    From<Rich<'a, Link, Message, Theme, Renderer>>
-    for Element<'a, Message, Theme, Renderer>
-where
-    Message: 'a,
-    Link: Clone + 'a,
-    Theme: Catalog + 'a,
-    Renderer: core::text::Renderer + 'a,
-{
-    fn from(
-        text: Rich<'a, Link, Message, Theme, Renderer>,
-    ) -> Element<'a, Message, Theme, Renderer> {
-        Element::new(text)
     }
 }

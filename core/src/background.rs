@@ -17,22 +17,30 @@ impl Background {
     pub fn scale_alpha(self, factor: f32) -> Self {
         match self {
             Self::Color(color) => Self::Color(color.scale_alpha(factor)),
-            Self::Gradient(gradient) => {
-                Self::Gradient(gradient.scale_alpha(factor))
-            }
+            Self::Gradient(gradient) => Self::Gradient(gradient.scale_alpha(factor)),
         }
     }
 }
 
 impl From<palette::Srgba<f32>> for Background {
     fn from(color: palette::Srgba<f32>) -> Self {
-        Background::Color(Color::from(color))
+        Background::Color(Color::from_rgba(
+            color.color.red,
+            color.color.green,
+            color.color.blue,
+            color.alpha,
+        ))
     }
 }
 
 impl From<palette::Srgba<u8>> for Background {
     fn from(color: palette::Srgba<u8>) -> Self {
-        Background::Color(Color::from(color))
+        Background::Color(Color::from_rgba8(
+            color.color.red,
+            color.color.green,
+            color.color.blue,
+            f32::from(color.alpha) / 255.0,
+        ))
     }
 }
 

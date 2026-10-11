@@ -19,7 +19,7 @@ pub struct Rectangle<T = f32> {
 
 impl<T> Rectangle<T>
 where
-    T: Default,
+    T: Default + Copy,
 {
     /// Creates a new [`Rectangle`] with its top-left corner at the origin
     /// and with the provided [`Size`].
@@ -30,6 +30,11 @@ where
             width: size.width,
             height: size.height,
         }
+    }
+
+    /// Returns the [`Size`] of the [`Rectangle`].
+    pub const fn size(&self) -> Size<T> {
+        Size::new(self.width, self.height)
     }
 }
 
@@ -72,11 +77,9 @@ impl Rectangle<f32> {
     ) -> (Rectangle, Radians) {
         let width = (top_right.x - top_left.x).hypot(top_right.y - top_left.y);
 
-        let height =
-            (bottom_left.x - top_left.x).hypot(bottom_left.y - top_left.y);
+        let height = (bottom_left.x - top_left.x).hypot(bottom_left.y - top_left.y);
 
-        let rotation =
-            (top_right.y - top_left.y).atan2(top_right.x - top_left.x);
+        let rotation = (top_right.y - top_left.y).atan2(top_right.x - top_left.x);
 
         let rotation = if rotation < 0.0 {
             2.0 * std::f32::consts::PI + rotation
@@ -129,11 +132,6 @@ impl Rectangle<f32> {
         Point::new(self.x, self.y)
     }
 
-    /// Returns the [`Size`] of the [`Rectangle`].
-    pub fn size(&self) -> Size {
-        Size::new(self.width, self.height)
-    }
-
     /// Returns the area of the [`Rectangle`].
     pub fn area(&self) -> f32 {
         self.width * self.height
@@ -153,11 +151,9 @@ impl Rectangle<f32> {
     pub fn distance(&self, point: Point) -> f32 {
         let center = self.center();
 
-        let distance_x =
-            ((point.x - center.x).abs() - self.width / 2.0).max(0.0);
+        let distance_x = ((point.x - center.x).abs() - self.width / 2.0).max(0.0);
 
-        let distance_y =
-            ((point.y - center.y).abs() - self.height / 2.0).max(0.0);
+        let distance_y = ((point.y - center.y).abs() - self.height / 2.0).max(0.0);
 
         distance_x.hypot(distance_y)
     }
@@ -212,16 +208,11 @@ impl Rectangle<f32> {
     /// not be on the border.
     pub fn is_within_strict(&self, container: &Rectangle) -> bool {
         container.contains_strict(self.position())
-            && container.contains_strict(
-                self.position() + Vector::new(self.width, self.height),
-            )
+            && container.contains_strict(self.position() + Vector::new(self.width, self.height))
     }
 
     /// Computes the intersection with the given [`Rectangle`].
-    pub fn intersection(
-        &self,
-        other: &Rectangle<f32>,
-    ) -> Option<Rectangle<f32>> {
+    pub fn intersection(&self, other: &Rectangle<f32>) -> Option<Rectangle<f32>> {
         let x = self.x.max(other.x);
         let y = self.y.max(other.y);
 
@@ -267,24 +258,39 @@ impl Rectangle<f32> {
         }
     }
 
+    /// Rounds the [`Rectangle`] coordinates.
+    pub fn round(self) -> Self {
+        let top_left = self.position().round();
+        let bottom_right = (self.position() + Vector::from(self.size())).round();
+
+        Self {
+            x: top_left.x,
+            y: top_left.y,
+            width: bottom_right.x - top_left.x,
+            height: bottom_right.y - top_left.y,
+        }
+    }
+
     /// Snaps the [`Rectangle`] to __unsigned__ integer coordinates.
     pub fn snap(self) -> Option<Rectangle<u32>> {
-        let top_left = self.position().snap();
-        let bottom_right = (self.position() + Vector::from(self.size())).snap();
+        let rounded = self.round();
 
-        let width = bottom_right.x.checked_sub(top_left.x)?;
-        let height = bottom_right.y.checked_sub(top_left.y)?;
-
-        if width < 1 || height < 1 {
+        if rounded.width < 1.0 || rounded.height < 1.0 {
             return None;
         }
 
         Some(Rectangle {
-            x: top_left.x,
-            y: top_left.y,
-            width,
-            height,
+            x: rounded.x as u32,
+            y: rounded.y as u32,
+            width: rounded.width as u32,
+            height: rounded.height as u32,
         })
+    }
+
+    /// Computes the logical [`Rectangle`] that ends up rounded
+    /// after the given `scale_factor` is applied to it.
+    pub fn hint(self, scale_factor: f32) -> Self {
+        (self * scale_factor).round() / scale_factor
     }
 
     /// Expands the [`Rectangle`] a given amount.
@@ -345,21 +351,41 @@ impl Rectangle<f32> {
     ) -> Point {
         let x = match align_x.into() {
             alignment::Horizontal::Left => self.x,
-            alignment::Horizontal::Center => {
-                self.x + (self.width - size.width) / 2.0
-            }
+            alignment::Horizontal::Center => self.x + (self.width - size.width) / 2.0,
             alignment::Horizontal::Right => self.x + self.width - size.width,
         };
 
         let y = match align_y.into() {
             alignment::Vertical::Top => self.y,
-            alignment::Vertical::Center => {
-                self.y + (self.height - size.height) / 2.0
-            }
+            alignment::Vertical::Center => self.y + (self.height - size.height) / 2.0,
             alignment::Vertical::Bottom => self.y + self.height - size.height,
         };
 
         Point::new(x, y)
+    }
+
+    /// Returns the two endpoints of a chord through the rectangle's center
+    /// at the given `angle`.
+    ///
+    /// The angle is measured clockwise from the negative y-axis, so `0`
+    /// produces a vertical chord and `π/2` a horizontal one. The returned
+    /// points are `(start, end)`, symmetric about [`Rectangle::center`].
+    pub fn chord(&self, angle: impl Into<Radians>) -> (Point, Point) {
+        use std::f32::consts::FRAC_PI_2;
+
+        let angle = angle.into().0 - FRAC_PI_2;
+        let r = Vector::new(f32::cos(angle), f32::sin(angle));
+
+        let distance_to_rect = f32::max(
+            f32::abs(r.x * self.width / 2.0),
+            f32::abs(r.y * self.height / 2.0),
+        );
+
+        let center = self.center();
+        let start = center - r * distance_to_rect;
+        let end = center + r * distance_to_rect;
+
+        (start, end)
     }
 }
 
@@ -376,6 +402,19 @@ impl std::ops::Mul<f32> for Rectangle<f32> {
     }
 }
 
+impl std::ops::Div<f32> for Rectangle<f32> {
+    type Output = Self;
+
+    fn div(self, scale: f32) -> Self {
+        Self {
+            x: self.x / scale,
+            y: self.y / scale,
+            width: self.width / scale,
+            height: self.height / scale,
+        }
+    }
+}
+
 impl From<Rectangle<u32>> for Rectangle<f32> {
     fn from(rectangle: Rectangle<u32>) -> Rectangle<f32> {
         Rectangle {
@@ -383,6 +422,15 @@ impl From<Rectangle<u32>> for Rectangle<f32> {
             y: rectangle.y as f32,
             width: rectangle.width as f32,
             height: rectangle.height as f32,
+        }
+    }
+}
+
+impl<T> From<Rectangle<T>> for Size<T> {
+    fn from(rectangle: Rectangle<T>) -> Size<T> {
+        Size {
+            width: rectangle.width,
+            height: rectangle.height,
         }
     }
 }
@@ -402,6 +450,16 @@ where
     }
 }
 
+impl<T> std::ops::AddAssign<Vector<T>> for Rectangle<T>
+where
+    T: std::ops::AddAssign,
+{
+    fn add_assign(&mut self, translation: Vector<T>) {
+        self.x += translation.x;
+        self.y += translation.y;
+    }
+}
+
 impl<T> std::ops::Sub<Vector<T>> for Rectangle<T>
 where
     T: std::ops::Sub<Output = T>,
@@ -414,5 +472,15 @@ where
             y: self.y - translation.y,
             ..self
         }
+    }
+}
+
+impl<T> std::ops::SubAssign<Vector<T>> for Rectangle<T>
+where
+    T: std::ops::SubAssign,
+{
+    fn sub_assign(&mut self, translation: Vector<T>) {
+        self.x -= translation.x;
+        self.y -= translation.y;
     }
 }

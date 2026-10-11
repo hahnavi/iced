@@ -1,11 +1,10 @@
 use iced::alignment;
 use iced::mouse;
+use iced::theme;
 use iced::widget::canvas::{self, Canvas, Frame, Geometry, Path};
 use iced::widget::{Slider, column, row, text};
-use iced::{
-    Center, Color, Element, Fill, Font, Pixels, Point, Rectangle, Renderer,
-    Size, Vector,
-};
+use iced::{Center, Color, Fill, Font, Pixels, Point, Rectangle, Renderer, Size, Vector, Widget};
+
 use palette::{Darken, Hsl, Lighten, ShiftHue, convert::FromColor, rgb::Rgb};
 use std::marker::PhantomData;
 use std::ops::RangeInclusive;
@@ -17,7 +16,7 @@ pub fn main() -> iced::Result {
         ColorPalette::view,
     )
     .theme(ColorPalette::theme)
-    .default_font(Font::MONOSPACE)
+    .font(Font::MONOSPACE)
     .run()
 }
 
@@ -56,7 +55,7 @@ impl ColorPalette {
         self.theme = Theme::new(to_color(srgb));
     }
 
-    fn view(&self) -> Element<'_, Message> {
+    fn view(&self) -> impl Widget<Message> {
         let base = self.theme.base;
 
         let srgb = to_rgb(base);
@@ -77,13 +76,12 @@ impl ColorPalette {
         ]
         .padding(10)
         .spacing(10)
-        .into()
     }
 
     fn theme(&self) -> iced::Theme {
         iced::Theme::custom(
             String::from("Custom"),
-            iced::theme::Palette {
+            theme::palette::Seed {
                 background: self.theme.base,
                 primary: *self.theme.lower.first().unwrap(),
                 text: *self.theme.higher.last().unwrap(),
@@ -149,8 +147,8 @@ impl Theme {
             .chain(self.higher.iter())
     }
 
-    pub fn view(&self) -> Element<'_, Message> {
-        Canvas::new(self).width(Fill).height(Fill).into()
+    pub fn view(&self) -> impl Widget<Message> {
+        Canvas::new(self).width(Fill).height(Fill)
     }
 
     fn draw(&self, frame: &mut Frame, text_color: Color) {
@@ -255,7 +253,7 @@ impl<Message> canvas::Program<Message> for Theme {
         _cursor: mouse::Cursor,
     ) -> Vec<Geometry> {
         let theme = self.canvas_cache.draw(renderer, bounds.size(), |frame| {
-            let palette = theme.extended_palette();
+            let palette = theme.palette();
 
             self.draw(frame, palette.background.base.text);
         });
@@ -296,7 +294,7 @@ trait ColorSpace: Sized {
 }
 
 impl<C: ColorSpace + Copy> ColorPicker<C> {
-    fn view(&self, color: C) -> Element<'_, C> {
+    fn view(&self, color: C) -> impl Widget<C> {
         let [c1, c2, c3] = color.components();
         let [cr1, cr2, cr3] = C::COMPONENT_RANGES;
 
@@ -305,8 +303,7 @@ impl<C: ColorSpace + Copy> ColorPicker<C> {
             component: f32,
             update: impl Fn(f32) -> C + 'a,
         ) -> Slider<'a, f64, C> {
-            Slider::new(range, f64::from(component), move |v| update(v as f32))
-                .step(0.01)
+            Slider::new(range, f64::from(component), move |v| update(v as f32)).step(0.01)
         }
 
         row![
@@ -318,14 +315,12 @@ impl<C: ColorSpace + Copy> ColorPicker<C> {
         ]
         .spacing(10)
         .align_y(Center)
-        .into()
     }
 }
 
 impl ColorSpace for Color {
     const LABEL: &'static str = "RGB";
-    const COMPONENT_RANGES: [RangeInclusive<f64>; 3] =
-        [0.0..=1.0, 0.0..=1.0, 0.0..=1.0];
+    const COMPONENT_RANGES: [RangeInclusive<f64>; 3] = [0.0..=1.0, 0.0..=1.0, 0.0..=1.0];
 
     fn new(r: f32, g: f32, b: f32) -> Self {
         Color::from_rgb(r, g, b)
@@ -347,15 +342,10 @@ impl ColorSpace for Color {
 
 impl ColorSpace for palette::Hsl {
     const LABEL: &'static str = "HSL";
-    const COMPONENT_RANGES: [RangeInclusive<f64>; 3] =
-        [0.0..=360.0, 0.0..=1.0, 0.0..=1.0];
+    const COMPONENT_RANGES: [RangeInclusive<f64>; 3] = [0.0..=360.0, 0.0..=1.0, 0.0..=1.0];
 
     fn new(hue: f32, saturation: f32, lightness: f32) -> Self {
-        palette::Hsl::new(
-            palette::RgbHue::from_degrees(hue),
-            saturation,
-            lightness,
-        )
+        palette::Hsl::new(palette::RgbHue::from_degrees(hue), saturation, lightness)
     }
 
     fn components(&self) -> [f32; 3] {
@@ -378,8 +368,7 @@ impl ColorSpace for palette::Hsl {
 
 impl ColorSpace for palette::Hsv {
     const LABEL: &'static str = "HSV";
-    const COMPONENT_RANGES: [RangeInclusive<f64>; 3] =
-        [0.0..=360.0, 0.0..=1.0, 0.0..=1.0];
+    const COMPONENT_RANGES: [RangeInclusive<f64>; 3] = [0.0..=360.0, 0.0..=1.0, 0.0..=1.0];
 
     fn new(hue: f32, saturation: f32, value: f32) -> Self {
         palette::Hsv::new(palette::RgbHue::from_degrees(hue), saturation, value)
@@ -405,15 +394,10 @@ impl ColorSpace for palette::Hsv {
 
 impl ColorSpace for palette::Hwb {
     const LABEL: &'static str = "HWB";
-    const COMPONENT_RANGES: [RangeInclusive<f64>; 3] =
-        [0.0..=360.0, 0.0..=1.0, 0.0..=1.0];
+    const COMPONENT_RANGES: [RangeInclusive<f64>; 3] = [0.0..=360.0, 0.0..=1.0, 0.0..=1.0];
 
     fn new(hue: f32, whiteness: f32, blackness: f32) -> Self {
-        palette::Hwb::new(
-            palette::RgbHue::from_degrees(hue),
-            whiteness,
-            blackness,
-        )
+        palette::Hwb::new(palette::RgbHue::from_degrees(hue), whiteness, blackness)
     }
 
     fn components(&self) -> [f32; 3] {
@@ -454,8 +438,7 @@ impl ColorSpace for palette::Lab {
 
 impl ColorSpace for palette::Lch {
     const LABEL: &'static str = "Lch";
-    const COMPONENT_RANGES: [RangeInclusive<f64>; 3] =
-        [0.0..=100.0, 0.0..=128.0, 0.0..=360.0];
+    const COMPONENT_RANGES: [RangeInclusive<f64>; 3] = [0.0..=100.0, 0.0..=128.0, 0.0..=360.0];
 
     fn new(l: f32, chroma: f32, hue: f32) -> Self {
         palette::Lch::new(l, chroma, palette::LabHue::from_degrees(hue))

@@ -12,6 +12,7 @@ static COUNT: AtomicU64 = AtomicU64::new(1);
 impl Id {
     /// No window will match this Id
     pub const NONE: Id = Id(0);
+    /// A reserved identifier used internally by the runtime.
     pub const RESERVED: Id = Id(1);
 
     /// Creates a new unique window [`Id`].

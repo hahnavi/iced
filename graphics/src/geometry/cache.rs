@@ -84,9 +84,7 @@ where
         let state = self.raw.state();
 
         let previous = match state.borrow().deref() {
-            cache::State::Empty { previous } => {
-                previous.as_ref().map(|data| data.geometry.clone())
-            }
+            cache::State::Empty { previous } => previous.as_ref().map(|data| data.geometry.clone()),
             cache::State::Filled { current } => {
                 if current.bounds == bounds {
                     return Cached::load(&current.geometry);
@@ -116,7 +114,7 @@ where
     <Renderer::Geometry as Cached>::Cache: std::fmt::Debug,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", &self.raw)
+        write!(f, "{:?}", self.raw)
     }
 }
 

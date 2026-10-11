@@ -5,10 +5,7 @@ use iced_runtime::{
     task,
 };
 
-pub fn blur(
-    id: window::Id,
-    blur: Option<Vec<iced_runtime::core::Rectangle>>,
-) -> Task<()> {
+pub fn blur(id: window::Id, blur: Option<Vec<iced_runtime::core::Rectangle>>) -> Task<()> {
     task::oneshot(|_| {
         Action::PlatformSpecific(platform_specific::Action::Wayland(
             wayland::Action::BlurSurface(id, blur),

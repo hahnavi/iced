@@ -33,9 +33,7 @@ impl Image {
     /// Returns the bounds of the [`Image`].
     pub fn bounds(&self) -> Rectangle {
         match self {
-            Image::Raster { image, bounds, .. } => {
-                bounds.rotate(image.rotation)
-            }
+            Image::Raster { image, bounds, .. } => bounds.rotate(image.rotation),
             Image::Vector { svg, bounds, .. } => bounds.rotate(svg.rotation),
         }
     }
@@ -89,10 +87,7 @@ pub fn load(handle: &image::Handle) -> Result<Buffer, image::Error> {
                 .unwrap_or_else(Self::empty))
         }
 
-        fn perform(
-            self,
-            mut image: ::image::DynamicImage,
-        ) -> ::image::DynamicImage {
+        fn perform(self, mut image: ::image::DynamicImage) -> ::image::DynamicImage {
             use ::image::imageops;
 
             if self.contains(Operation::ROTATE_90) {
@@ -121,14 +116,10 @@ pub fn load(handle: &image::Handle) -> Result<Buffer, image::Error> {
 
     let (width, height, pixels) = match handle {
         image::Handle::Path(_, path) => {
-            use std::sync::Arc;
-
-            let image = ::image::ImageReader::open(&path)
-                .map_err(|e| image::Error::Inaccessible(Arc::new(e)))?
-                .with_guessed_format()
-                .map_err(|e| image::Error::Invalid(Arc::new(e)))?
+            let image = ::image::ImageReader::open(path)?
+                .with_guessed_format()?
                 .decode()
-                .map_err(|e| image::Error::Invalid(Arc::new(e)))?;
+                .map_err(to_error)?;
 
             let operation = std::fs::File::open(path)
                 .ok()
@@ -143,10 +134,9 @@ pub fn load(handle: &image::Handle) -> Result<Buffer, image::Error> {
         image::Handle::Bytes(_, bytes) => {
             let image = ::image::load_from_memory(bytes).map_err(to_error)?;
 
-            let operation =
-                Operation::from_exif(&mut std::io::Cursor::new(bytes))
-                    .ok()
-                    .unwrap_or_else(Operation::empty);
+            let operation = Operation::from_exif(&mut std::io::Cursor::new(bytes))
+                .ok()
+                .unwrap_or_else(Operation::empty);
 
             let rgba = operation.perform(image).into_rgba8();
 
@@ -164,9 +154,7 @@ pub fn load(handle: &image::Handle) -> Result<Buffer, image::Error> {
         Ok(image)
     } else {
         Err(to_error(::image::error::ImageError::Limits(
-            ::image::error::LimitError::from_kind(
-                ::image::error::LimitErrorKind::DimensionError,
-            ),
+            ::image::error::LimitError::from_kind(::image::error::LimitErrorKind::DimensionError),
         )))
     }
 }
@@ -176,19 +164,14 @@ fn to_error(error: ::image::ImageError) -> image::Error {
     use std::sync::Arc;
 
     match error {
-        ::image::ImageError::IoError(error) => {
-            image::Error::Inaccessible(Arc::new(error))
-        }
+        ::image::ImageError::IoError(error) => image::Error::Inaccessible(Arc::new(error)),
         error => image::Error::Invalid(Arc::new(error)),
     }
 }
 
 /// resample a raster image to this target
 #[cfg(feature = "image")]
-pub fn downsample_target(
-    native: Size<u32>,
-    bounds: Size<f32>,
-) -> Option<Size<u32>> {
+pub fn downsample_target(native: Size<u32>, bounds: Size<f32>) -> Option<Size<u32>> {
     if !(bounds.width >= 1.0 && bounds.height >= 1.0) {
         return None;
     }
@@ -213,14 +196,9 @@ pub fn downsample_target(
 
 /// Resamples premultiplied pixels down to `target`.
 #[cfg(feature = "image")]
-pub fn downsample_premultiplied(
-    pixels: &[u8],
-    size: Size<u32>,
-    target: Size<u32>,
-) -> Vec<u8> {
-    let image =
-        ::image::RgbaImage::from_raw(size.width, size.height, pixels.to_vec())
-            .expect("pixels hold width * height RGBA pixels");
+pub fn downsample_premultiplied(pixels: &[u8], size: Size<u32>, target: Size<u32>) -> Vec<u8> {
+    let image = ::image::RgbaImage::from_raw(size.width, size.height, pixels.to_vec())
+        .expect("pixels hold width * height RGBA pixels");
 
     resize(&image, target).into_raw()
 }
@@ -233,9 +211,7 @@ fn resize(image: &::image::RgbaImage, target: Size<u32>) -> ::image::RgbaImage {
     // if image is too big compared to target, box average it to double the target
     // and then do Lanczos. The final result is almost the same, but lanczos is too
     // expensive on large images.
-    let image = if image.width() >= target.width * 4
-        && image.height() >= target.height * 4
-    {
+    let image = if image.width() >= target.width * 4 && image.height() >= target.height * 4 {
         Cow::Owned(imageops::thumbnail(
             image,
             target.width * 2,
@@ -254,12 +230,9 @@ fn resize(image: &::image::RgbaImage, target: Size<u32>) -> ::image::RgbaImage {
 /// transparent pixels.
 #[cfg(feature = "image")]
 pub fn downsample(image: &Buffer, target: Size<u32>) -> ::image::RgbaImage {
-    let mut image = ::image::RgbaImage::from_raw(
-        image.width(),
-        image.height(),
-        image.as_raw().to_vec(),
-    )
-    .expect("buffer holds width * height RGBA pixels");
+    let mut image =
+        ::image::RgbaImage::from_raw(image.width(), image.height(), image.as_raw().to_vec())
+            .expect("buffer holds width * height RGBA pixels");
 
     for pixel in image.pixels_mut() {
         let alpha = u32::from(pixel[3]);
@@ -276,8 +249,7 @@ pub fn downsample(image: &Buffer, target: Size<u32>) -> ::image::RgbaImage {
 
         if alpha > 0 {
             for channel in &mut pixel.0[..3] {
-                *channel = ((u32::from(*channel) * 255 + alpha / 2) / alpha)
-                    .min(255) as u8;
+                *channel = ((u32::from(*channel) * 255 + alpha / 2) / alpha).min(255) as u8;
             }
         }
     }

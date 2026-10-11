@@ -1,16 +1,13 @@
 mod echo;
 
-use iced::widget::{
-    button, center, column, operation, row, scrollable, text, text_input,
-};
-use iced::{Center, Element, Fill, Subscription, Task, color};
+use iced::widget::{button, center, column, operation, row, scrollable, text, text_input};
+use iced::{Center, Fill, Subscription, Task, Widget, color};
 
 pub fn main() -> iced::Result {
     iced::application(WebSocket::new, WebSocket::update, WebSocket::view)
         .subscription(WebSocket::subscription)
         .run()
 }
-use iced::id::Id;
 
 struct WebSocket {
     messages: Vec<echo::Message>,
@@ -75,7 +72,7 @@ impl WebSocket {
                 echo::Event::MessageReceived(message) => {
                     self.messages.push(message);
 
-                    operation::snap_to_end(MESSAGE_LOG)
+                    operation::scrollable::snap_to_end(MESSAGE_LOG, operation::Animation::Auto)
                 }
             },
         }
@@ -85,22 +82,15 @@ impl WebSocket {
         Subscription::run(echo::connect).map(Message::Echo)
     }
 
-    fn view(&self) -> Element<'_, Message> {
-        let message_log: Element<_> = if self.messages.is_empty() {
-            center(
-                text("Your messages will appear here...")
-                    .color(color!(0x888888)),
-            )
-            .into()
+    fn view(&self) -> impl Widget<Message> {
+        let message_log = if self.messages.is_empty() {
+            center(text("Your messages will appear here...").color(color!(0x888888))).boxed()
         } else {
-            scrollable(
-                column(self.messages.iter().map(text).map(Element::from))
-                    .spacing(10),
-            )
-            .id(MESSAGE_LOG)
-            .height(Fill)
-            .spacing(10)
-            .into()
+            scrollable(column(self.messages.iter().map(text)).spacing(10))
+                .id(MESSAGE_LOG)
+                .height(Fill)
+                .spacing(10)
+                .boxed()
         };
 
         let new_message_input = {
@@ -108,8 +98,7 @@ impl WebSocket {
                 .on_input(Message::NewMessageChanged)
                 .padding(10);
 
-            let mut button = button(text("Send").height(40).align_y(Center))
-                .padding([0, 20]);
+            let mut button = button(text("Send").height(40).align_y(Center)).padding([0, 20]);
 
             if matches!(self.state, State::Connected(_))
                 && let Some(message) = echo::Message::new(&self.new_message)
@@ -125,7 +114,6 @@ impl WebSocket {
             .height(Fill)
             .padding(20)
             .spacing(10)
-            .into()
     }
 }
 

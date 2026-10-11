@@ -2,9 +2,9 @@
 //!
 //! # Example
 //! ```no_run
-//! # mod iced { pub mod widget { pub use iced_widget::*; } }
+//! # mod iced { pub mod widget { pub use iced_widget::*; } pub use iced_widget::Renderer; pub use iced_widget::core::*; }
+//! # use iced::widget::Widget;
 //! # pub type State = ();
-//! # pub type Element<'a, Message> = iced_widget::core::Element<'a, Message, iced_widget::Theme, iced_widget::Renderer>;
 //! use iced::widget::button;
 //!
 //! #[derive(Clone)]
@@ -12,8 +12,8 @@
 //!     ButtonPressed,
 //! }
 //!
-//! fn view(state: &State) -> Element<'_, Message> {
-//!     button("Press me!").on_press(Message::ButtonPressed).into()
+//! fn view(state: &State) -> impl Widget<Message> {
+//!     button("Press me!").on_press(Message::ButtonPressed)
 //! }
 //! ```
 //! Allow your users to perform actions by pressing a button.
@@ -30,12 +30,12 @@ use crate::core::overlay;
 use crate::core::renderer;
 use crate::core::theme::palette;
 use crate::core::touch;
-use crate::core::widget::Operation;
 use crate::core::widget::tree::{self, Tree};
+use crate::core::widget::{Meta, Operation};
 use crate::core::window;
 use crate::core::{
-    Background, Clipboard, Color, Element, Event, Layout, Length, Padding,
-    Rectangle, Shadow, Shell, Size, Theme, Vector, Widget,
+    Background, Color, Event, Layout, Length, Padding, Rectangle, Shadow, Shell, Size, Theme,
+    Vector, Widget,
 };
 
 use iced_renderer::core::widget::operation;
@@ -44,9 +44,9 @@ use iced_renderer::core::widget::operation;
 ///
 /// # Example
 /// ```no_run
-/// # mod iced { pub mod widget { pub use iced_widget::*; } }
+/// # mod iced { pub mod widget { pub use iced_widget::*; } pub use iced_widget::Renderer; pub use iced_widget::core::*; }
+/// # use iced::widget::Widget;
 /// # pub type State = ();
-/// # pub type Element<'a, Message> = iced_widget::core::Element<'a, Message, iced_widget::Theme, iced_widget::Renderer>;
 /// use iced::widget::button;
 ///
 /// #[derive(Clone)]
@@ -54,8 +54,8 @@ use iced_renderer::core::widget::operation;
 ///     ButtonPressed,
 /// }
 ///
-/// fn view(state: &State) -> Element<'_, Message> {
-///     button("Press me!").on_press(Message::ButtonPressed).into()
+/// fn view(state: &State) -> impl Widget<Message> {
+///     button("Press me!").on_press(Message::ButtonPressed)
 /// }
 /// ```
 ///
@@ -63,9 +63,9 @@ use iced_renderer::core::widget::operation;
 /// be disabled:
 ///
 /// ```no_run
-/// # mod iced { pub mod widget { pub use iced_widget::*; } }
+/// # mod iced { pub mod widget { pub use iced_widget::*; } pub use iced_widget::Renderer; pub use iced_widget::core::*; }
+/// # use iced::widget::Widget;
 /// # pub type State = ();
-/// # pub type Element<'a, Message> = iced_widget::core::Element<'a, Message, iced_widget::Theme, iced_widget::Renderer>;
 /// use iced::widget::button;
 ///
 /// #[derive(Clone)]
@@ -73,16 +73,15 @@ use iced_renderer::core::widget::operation;
 ///     ButtonPressed,
 /// }
 ///
-/// fn view(state: &State) -> Element<'_, Message> {
-///     button("I am disabled!").into()
+/// fn view(state: &State) -> impl Widget<Message> {
+///     button("I am disabled!")
 /// }
 /// ```
-pub struct Button<'a, Message, Theme = crate::Theme, Renderer = crate::Renderer>
+pub struct Button<'a, Message, W = crate::Element<'a, Message>, Theme = crate::Theme>
 where
-    Renderer: crate::core::Renderer,
     Theme: Catalog,
 {
-    content: Element<'a, Message, Theme, Renderer>,
+    content: W,
     on_press: Option<OnPress<'a, Message>>,
     id: Id,
     #[cfg(feature = "a11y")]
@@ -113,18 +112,12 @@ impl<Message: Clone> OnPress<'_, Message> {
     }
 }
 
-impl<'a, Message, Theme, Renderer> Button<'a, Message, Theme, Renderer>
+impl<'a, Message, W, Theme> Button<'a, Message, W, Theme>
 where
-    Renderer: crate::core::Renderer,
     Theme: Catalog,
 {
     /// Creates a new [`Button`] with the given content.
-    pub fn new(
-        content: impl Into<Element<'a, Message, Theme, Renderer>>,
-    ) -> Self {
-        let content = content.into();
-        let size = content.as_widget().size_hint();
-
+    pub fn new(content: W) -> Self {
         Button {
             content,
             id: Id::unique(),
@@ -135,8 +128,8 @@ where
             #[cfg(feature = "a11y")]
             label: None,
             on_press: None,
-            width: size.width.fluid(),
-            height: size.height.fluid(),
+            width: Length::Fit,
+            height: Length::Fit,
             padding: DEFAULT_PADDING,
             clip: false,
             class: Theme::default(),
@@ -178,10 +171,7 @@ where
     /// This closure will only be called when the [`Button`] is actually pressed and,
     /// therefore, this method is useful to reduce overhead if creating the resulting
     /// message is slow.
-    pub fn on_press_with(
-        mut self,
-        on_press: impl Fn() -> Message + 'a,
-    ) -> Self {
+    pub fn on_press_with(mut self, on_press: impl Fn() -> Message + 'a) -> Self {
         self.on_press = Some(OnPress::Closure(Box::new(on_press)));
         self
     }
@@ -192,6 +182,22 @@ where
     /// If `None`, the [`Button`] will be disabled.
     pub fn on_press_maybe(mut self, on_press: Option<Message>) -> Self {
         self.on_press = on_press.map(OnPress::Direct);
+        self
+    }
+
+    /// Sets the message that will be produced when the [`Button`] is pressed,
+    /// if `Some`.
+    ///
+    /// This is analogous to [`Button::on_press`], but using a closure to produce
+    /// the message.
+    ///
+    /// This closure will only be called when the [`Button`] is actually pressed and,
+    /// therefore, this method is useful to reduce overhead if creating the resulting
+    /// message is slow.
+    ///
+    /// If `None`, the [`Button`] will be disabled.
+    pub fn on_press_maybe_with(mut self, on_press: Option<impl Fn() -> Message + 'a>) -> Self {
+        self.on_press = on_press.map(|on_press| OnPress::Closure(Box::new(on_press)));
         self
     }
 
@@ -235,10 +241,7 @@ where
 
     #[cfg(feature = "a11y")]
     /// Sets the description of the [`Button`].
-    pub fn description_widget<T: iced_accessibility::Describes>(
-        mut self,
-        description: &T,
-    ) -> Self {
+    pub fn description_widget<T: iced_accessibility::Describes>(mut self, description: &T) -> Self {
         self.description = Some(iced_accessibility::Description::Id(
             description.description(),
         ));
@@ -248,16 +251,14 @@ where
     #[cfg(feature = "a11y")]
     /// Sets the description of the [`Button`].
     pub fn description(mut self, description: impl Into<Cow<'a, str>>) -> Self {
-        self.description =
-            Some(iced_accessibility::Description::Text(description.into()));
+        self.description = Some(iced_accessibility::Description::Text(description.into()));
         self
     }
 
     #[cfg(feature = "a11y")]
     /// Sets the label of the [`Button`].
     pub fn label(mut self, label: &dyn iced_accessibility::Labels) -> Self {
-        self.label =
-            Some(label.label().into_iter().map(|l| l.into()).collect());
+        self.label = Some(label.label().into_iter().map(|l| l.into()).collect());
         self
     }
 }
@@ -270,10 +271,13 @@ struct State {
     needs_redraw: bool,
 }
 
-impl<'a, Message, Theme, Renderer> Widget<Message, Theme, Renderer>
-    for Button<'a, Message, Theme, Renderer>
+impl<'a, Message, W, Theme> Meta for Button<'a, Message, W, Theme> where Theme: Catalog {}
+
+impl<'a, Message, W, Theme, Renderer> Widget<Message, Theme, Renderer>
+    for Button<'a, Message, W, Theme>
 where
     Message: 'a + Clone,
+    W: Widget<Message, Theme, Renderer>,
     Renderer: 'a + crate::core::Renderer,
     Theme: Catalog,
 {
@@ -285,12 +289,12 @@ where
         tree::State::new(State::default())
     }
 
-    fn children(&self) -> Vec<Tree> {
-        vec![Tree::new(&self.content)]
-    }
-
     fn diff(&mut self, tree: &mut Tree) {
         tree.diff_children(std::slice::from_mut(&mut self.content));
+
+        let size = self.content.size();
+        self.width = self.width.stack(size.width);
+        self.height = self.height.stack(size.height);
     }
 
     fn size(&self) -> Size<Length> {
@@ -300,46 +304,35 @@ where
         }
     }
 
-    fn layout(
-        &mut self,
-        tree: &mut Tree,
-        renderer: &Renderer,
-        limits: &layout::Limits,
-    ) -> layout::Node {
+    fn layout(&mut self, tree: &mut Tree, renderer: &Renderer, limits: &layout::Limits) {
         layout::padded(
+            tree,
             limits,
             self.width,
             self.height,
             self.padding,
-            |limits| {
-                self.content.as_widget_mut().layout(
-                    &mut tree.children[0],
-                    renderer,
-                    limits,
-                )
+            |tree, limits| {
+                self.content.layout(tree, renderer, limits);
+
+                tree.size
             },
-        )
+        );
     }
 
     fn operate(
         &mut self,
         tree: &mut Tree,
-        layout: Layout<'_>,
+        layout: Layout,
+        viewport: &Rectangle,
         renderer: &Renderer,
         operation: &mut dyn Operation,
     ) {
-        operation.container(None, layout.bounds());
+        operation.container(None, layout.bounds(), viewport);
         operation.traverse(&mut |operation| {
-            self.content.as_widget_mut().operate(
-                &mut tree.children[0],
-                layout
-                    .children()
-                    .next()
-                    .unwrap()
-                    .with_virtual_offset(layout.virtual_offset()),
-                renderer,
-                operation,
-            );
+            let (layout, tree) = layout.iter_mut(&mut tree.children).next().unwrap();
+
+            self.content
+                .operate(tree, layout, viewport, renderer, operation);
         });
     }
 
@@ -347,24 +340,20 @@ where
         &mut self,
         tree: &mut Tree,
         event: &Event,
-        layout: Layout<'_>,
+        layout: Layout,
         cursor: mouse::Cursor,
         renderer: &Renderer,
-        clipboard: &mut dyn Clipboard,
         shell: &mut Shell<'_, Message>,
         viewport: &Rectangle,
     ) {
-        self.content.as_widget_mut().update(
-            &mut tree.children[0],
+        let (content_layout, content_tree) = layout.iter_mut(&mut tree.children).next().unwrap();
+
+        self.content.update(
+            content_tree,
             event,
-            layout
-                .children()
-                .next()
-                .unwrap()
-                .with_virtual_offset(layout.virtual_offset()),
+            content_layout,
             cursor,
             renderer,
-            clipboard,
             shell,
             viewport,
         );
@@ -381,17 +370,17 @@ where
 
         match event {
             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left))
-            | Event::Touch(touch::Event::FingerPressed { .. }) => {
-                if self.on_press.is_some() {
-                    let bounds = layout.bounds();
+            | Event::Touch(touch::Event::FingerPressed { .. })
+                if self.on_press.is_some() =>
+            {
+                let bounds = layout.bounds();
 
-                    if cursor.is_over(bounds) {
-                        let state = tree.state.downcast_mut::<State>();
+                if cursor.is_over(bounds) {
+                    let state = tree.state.downcast_mut::<State>();
 
-                        state.is_pressed = true;
+                    state.is_pressed = true;
 
-                        shell.capture_event();
-                    }
+                    shell.capture_event();
                 }
             }
             Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left))
@@ -413,20 +402,29 @@ where
                 }
             }
             #[cfg(feature = "a11y")]
-            Event::A11y(
-                event_id,
-                iced_accessibility::accesskit::ActionRequest { action, .. },
-            ) => {
-                let state = tree.state.downcast_mut::<State>();
-                if let Some(Some(on_press)) = (self.id == *event_id
-                    && matches!(
-                        action,
-                        iced_accessibility::accesskit::Action::Click
-                    ))
-                .then(|| self.on_press.as_ref())
-                {
-                    state.is_pressed = false;
-                    shell.publish(on_press.get());
+            Event::A11y(event_id, iced_accessibility::accesskit::ActionRequest { action, .. }) => {
+                if iced_accessibility::IdEq::eq(
+                    &iced_accessibility::A11yId::from(self.id.clone()),
+                    event_id,
+                ) {
+                    let state = tree.state.downcast_mut::<State>();
+
+                    match action {
+                        iced_accessibility::accesskit::Action::Focus => {
+                            state.is_focused = true;
+                            state.needs_redraw = true;
+                            shell.request_redraw();
+                            shell.capture_event();
+                        }
+                        iced_accessibility::accesskit::Action::Click => {
+                            if let Some(on_press) = &self.on_press {
+                                state.is_pressed = false;
+                                shell.publish(on_press.get());
+                                shell.capture_event();
+                            }
+                        }
+                        _ => {}
+                    }
                 }
                 return;
             }
@@ -434,10 +432,7 @@ where
                 if let Some(on_press) = self.on_press.as_ref() {
                     let state = tree.state.downcast_mut::<State>();
                     if state.is_focused
-                        && matches!(
-                            key,
-                            keyboard::Key::Named(keyboard::key::Named::Enter)
-                        )
+                        && matches!(key, keyboard::Key::Named(keyboard::key::Named::Enter))
                     {
                         state.is_pressed = true;
                         shell.publish(on_press.get());
@@ -482,23 +477,15 @@ where
         renderer: &mut Renderer,
         theme: &Theme,
         renderer_style: &renderer::Style,
-        layout: Layout<'_>,
+        layout: Layout,
         cursor: mouse::Cursor,
         viewport: &Rectangle,
     ) {
         let bounds = layout.bounds();
-        let content_layout = layout
-            .children()
-            .next()
-            .unwrap()
-            .with_virtual_offset(layout.virtual_offset());
-        let style =
-            theme.style(&self.class, self.status.unwrap_or(Status::Disabled));
+        let (layout, tree) = layout.iter(&tree.children).next().unwrap();
+        let style = theme.style(&self.class, self.status.unwrap_or(Status::Disabled));
 
-        if style.background.is_some()
-            || style.border.width > 0.0
-            || style.shadow.color.a > 0.0
-        {
+        if style.background.is_some() || style.border.width > 0.0 || style.shadow.color.a > 0.0 {
             renderer.fill_quad(
                 renderer::Quad {
                     bounds,
@@ -518,18 +505,16 @@ where
             *viewport
         };
 
-        self.content.as_widget().draw(
-            &tree.children[0],
+        self.content.draw(
+            tree,
             renderer,
             theme,
             &renderer::Style {
                 text_color: style.text_color,
-                icon_color: style
-                    .icon_color
-                    .unwrap_or(renderer_style.icon_color),
+                icon_color: style.icon_color.unwrap_or(renderer_style.icon_color),
                 scale_factor: renderer_style.scale_factor,
             },
-            content_layout,
+            layout,
             cursor,
             &viewport,
         );
@@ -538,7 +523,7 @@ where
     fn mouse_interaction(
         &self,
         _tree: &Tree,
-        layout: Layout<'_>,
+        layout: Layout,
         cursor: mouse::Cursor,
         _viewport: &Rectangle,
         _renderer: &Renderer,
@@ -555,76 +540,57 @@ where
     fn overlay<'b>(
         &'b mut self,
         tree: &'b mut Tree,
-        layout: Layout<'b>,
+        layout: Layout,
         renderer: &Renderer,
         viewport: &Rectangle,
         translation: Vector,
-    ) -> Option<overlay::Element<'b, Message, Theme, Renderer>> {
-        self.content.as_widget_mut().overlay(
-            &mut tree.children[0],
-            layout
-                .children()
-                .next()
-                .unwrap()
-                .with_virtual_offset(layout.virtual_offset()),
-            renderer,
-            viewport,
-            translation,
-        )
+        window: Size,
+    ) -> Vec<overlay::Element<'b, Message, Theme, Renderer>> {
+        let (layout, tree) = layout.iter_mut(&mut tree.children).next().unwrap();
+
+        self.content
+            .overlay(tree, layout, renderer, viewport, translation, window)
     }
 
     #[cfg(feature = "a11y")]
-    /// get the a11y nodes for the widget
     fn a11y_nodes(
         &self,
-        layout: Layout<'_>,
+        layout: Layout,
         state: &Tree,
-        p: mouse::Cursor,
+        _cursor: mouse::Cursor,
     ) -> iced_accessibility::A11yTree {
         use iced_accessibility::{
             A11yNode, A11yTree,
-            accesskit::{Action, Node, NodeId, Rect, Role},
+            accesskit::{Action, Node, Rect, Role},
         };
 
-        let child_layout = layout.children().next().unwrap();
-        let child_tree = &state.children[0];
-        let child_tree = self.content.as_widget().a11y_nodes(
+        let (child_layout, child_state) = layout.iter(&state.children).next().unwrap();
+        let child_tree = self.content.a11y_nodes(
             child_layout.with_virtual_offset(layout.virtual_offset()),
-            child_tree,
-            p,
+            child_state,
+            _cursor,
         );
 
-        let Rectangle {
-            x,
-            y,
-            width,
-            height,
-        } = layout.bounds();
-        let bounds = Rect::new(
-            x as f64,
-            y as f64,
-            (x + width) as f64,
-            (y + height) as f64,
-        );
-        let is_hovered = state.state.downcast_ref::<State>().is_hovered;
-
+        let bounds = layout.bounds();
         let mut node = Node::new(Role::Button);
         node.add_action(Action::Focus);
         node.add_action(Action::Click);
-        node.set_bounds(bounds);
-        if let Some(name) = self.name.as_ref()
-            && self.label.as_ref().is_none_or(|l| l.is_empty())
+        node.set_bounds(Rect::new(
+            f64::from(bounds.x),
+            f64::from(bounds.y),
+            f64::from(bounds.x + bounds.width),
+            f64::from(bounds.y + bounds.height),
+        ));
+
+        if let Some(name) = &self.name
+            && self.label.as_ref().is_none_or(|label| label.is_empty())
         {
             node.set_label(name.clone());
         }
-        match self.description.as_ref() {
-            Some(iced_accessibility::Description::Id(id)) => {
-                node.set_described_by(
-                    id.iter()
-                        .cloned()
-                        .map(|id| NodeId::from(id))
-                        .collect::<Vec<_>>(),
-                );
+
+        match &self.description {
+            Some(iced_accessibility::Description::Id(ids)) => {
+                node.set_described_by(ids.iter().cloned().map(Into::into).collect::<Vec<_>>());
             }
             Some(iced_accessibility::Description::Text(text)) => {
                 node.set_description(text.clone());
@@ -632,22 +598,15 @@ where
             None => {}
         }
 
-        if let Some(label) = self.label.as_ref() {
+        if let Some(label) = &self.label {
             node.set_labelled_by(label.clone());
         }
 
         if self.on_press.is_none() {
-            node.set_disabled()
+            node.set_disabled();
         }
-        // TODO hover
-        // if is_hovered {
-        //     node.set_busy()
-        // }
 
-        A11yTree::node_with_child_tree(
-            A11yNode::new(node, self.id.clone()),
-            child_tree,
-        )
+        A11yTree::node_with_child_tree(A11yNode::new(node, self.id.clone()), child_tree)
     }
 
     fn id(&self) -> Option<Id> {
@@ -656,18 +615,6 @@ where
 
     fn set_id(&mut self, id: Id) {
         self.id = id;
-    }
-}
-
-impl<'a, Message, Theme, Renderer> From<Button<'a, Message, Theme, Renderer>>
-    for Element<'a, Message, Theme, Renderer>
-where
-    Message: Clone + 'a,
-    Theme: Catalog + 'a,
-    Renderer: crate::core::Renderer + 'a,
-{
-    fn from(button: Button<'a, Message, Theme, Renderer>) -> Self {
-        Self::new(button)
     }
 }
 
@@ -759,7 +706,7 @@ impl Default for Style {
             text_color: Color::BLACK,
             border: Border::default(),
             shadow: Shadow::default(),
-            snap: cfg!(feature = "crisp"),
+            snap: renderer::CRISP,
         }
     }
 }
@@ -784,11 +731,9 @@ impl Default for Style {
 ///
 /// impl Catalog for MyTheme {
 ///     type Class<'a> = ButtonClass;
-///
 ///     fn default<'a>() -> Self::Class<'a> {
 ///         ButtonClass::default()
 ///     }
-///
 ///
 ///     fn style(&self, class: &Self::Class<'_>, status: Status) -> Style {
 ///         let mut style = Style::default();
@@ -841,7 +786,7 @@ impl Catalog for Theme {
 
 /// A primary button; denoting a main action.
 pub fn primary(theme: &Theme, status: Status) -> Style {
-    let palette = theme.extended_palette();
+    let palette = theme.palette();
     let base = styled(palette.primary.base);
 
     match status {
@@ -856,7 +801,7 @@ pub fn primary(theme: &Theme, status: Status) -> Style {
 
 /// A secondary button; denoting a complementary action.
 pub fn secondary(theme: &Theme, status: Status) -> Style {
-    let palette = theme.extended_palette();
+    let palette = theme.palette();
     let base = styled(palette.secondary.base);
 
     match status {
@@ -871,7 +816,7 @@ pub fn secondary(theme: &Theme, status: Status) -> Style {
 
 /// A success button; denoting a good outcome.
 pub fn success(theme: &Theme, status: Status) -> Style {
-    let palette = theme.extended_palette();
+    let palette = theme.palette();
     let base = styled(palette.success.base);
 
     match status {
@@ -886,7 +831,7 @@ pub fn success(theme: &Theme, status: Status) -> Style {
 
 /// A warning button; denoting a risky action.
 pub fn warning(theme: &Theme, status: Status) -> Style {
-    let palette = theme.extended_palette();
+    let palette = theme.palette();
     let base = styled(palette.warning.base);
 
     match status {
@@ -901,7 +846,7 @@ pub fn warning(theme: &Theme, status: Status) -> Style {
 
 /// A danger button; denoting a destructive action.
 pub fn danger(theme: &Theme, status: Status) -> Style {
-    let palette = theme.extended_palette();
+    let palette = theme.palette();
     let base = styled(palette.danger.base);
 
     match status {
@@ -916,7 +861,7 @@ pub fn danger(theme: &Theme, status: Status) -> Style {
 
 /// A text button; useful for links.
 pub fn text(theme: &Theme, status: Status) -> Style {
-    let palette = theme.extended_palette();
+    let palette = theme.palette();
 
     let base = Style {
         text_color: palette.background.base.text,
@@ -935,15 +880,13 @@ pub fn text(theme: &Theme, status: Status) -> Style {
 
 /// A button using background shades.
 pub fn background(theme: &Theme, status: Status) -> Style {
-    let palette = theme.extended_palette();
+    let palette = theme.palette();
     let base = styled(palette.background.base);
 
     match status {
         Status::Active => base,
         Status::Pressed => Style {
-            background: Some(Background::Color(
-                palette.background.strong.color,
-            )),
+            background: Some(Background::Color(palette.background.strong.color)),
             ..base
         },
         Status::Hovered => Style {
@@ -956,21 +899,17 @@ pub fn background(theme: &Theme, status: Status) -> Style {
 
 /// A subtle button using weak background shades.
 pub fn subtle(theme: &Theme, status: Status) -> Style {
-    let palette = theme.extended_palette();
+    let palette = theme.palette();
     let base = styled(palette.background.weakest);
 
     match status {
         Status::Active => base,
         Status::Pressed => Style {
-            background: Some(Background::Color(
-                palette.background.strong.color,
-            )),
+            background: Some(Background::Color(palette.background.strong.color)),
             ..base
         },
         Status::Hovered => Style {
-            background: Some(Background::Color(
-                palette.background.weaker.color,
-            )),
+            background: Some(Background::Color(palette.background.weaker.color)),
             ..base
         },
         Status::Disabled => disabled(base),

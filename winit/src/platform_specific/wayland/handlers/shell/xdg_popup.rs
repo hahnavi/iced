@@ -3,10 +3,7 @@ use crate::platform_specific::wayland::{
     event_loop::state::{PopupParent, SctkState},
     sctk_event::{PopupEventVariant, SctkEvent},
 };
-use cctk::sctk::{
-    delegate_xdg_popup, reexports::client::Proxy,
-    shell::xdg::popup::PopupHandler,
-};
+use cctk::sctk::{delegate_xdg_popup, reexports::client::Proxy, shell::xdg::popup::PopupHandler};
 use winit::dpi::LogicalSize;
 
 impl PopupHandler for SctkState {
@@ -27,16 +24,11 @@ impl PopupHandler for SctkState {
         let first = sctk_popup.last_configure.is_none();
         _ = sctk_popup.last_configure.replace(configure.clone());
         let mut guard = sctk_popup.common.lock().unwrap();
-        guard.size =
-            LogicalSize::new(configure.width as u32, configure.height as u32);
+        guard.size = LogicalSize::new(configure.width as u32, configure.height as u32);
         receive_frame(&mut self.frame_status, popup.wl_surface());
 
         self.sctk_events.push(SctkEvent::PopupEvent {
-            variant: PopupEventVariant::Configure(
-                configure,
-                popup.wl_surface().clone(),
-                first,
-            ),
+            variant: PopupEventVariant::Configure(configure, popup.wl_surface().clone(), first),
             id: popup.wl_surface().clone(),
             parent_window: sctk_popup.data.parent_window,
             toplevel_id: sctk_popup.data.toplevel.clone(),
@@ -59,8 +51,7 @@ impl PopupHandler for SctkState {
         };
 
         for popup in to_destroy {
-            if let Some(id) = self.id_map.remove(&popup.popup.wl_surface().id())
-            {
+            if let Some(id) = self.id_map.remove(&popup.popup.wl_surface().id()) {
                 if let Some(blurred) = self.blur_surfaces.remove(&id) {
                     blurred.destroy();
                 }

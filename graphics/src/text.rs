@@ -11,7 +11,7 @@ pub use cosmic_text;
 
 use crate::core::alignment;
 use crate::core::font::{self, Font};
-use crate::core::text::{Alignment, Shaping, Wrapping};
+use crate::core::text::{Alignment, Ellipsis, Shaping, Wrapping};
 use crate::core::{Color, Pixels, Point, Rectangle, Size, Transformation};
 
 use std::borrow::Cow;
@@ -59,6 +59,10 @@ pub enum Text {
         align_y: alignment::Vertical,
         /// The shaping strategy of the text.
         shaping: Shaping,
+        /// The wrapping strategy of the text.
+        wrapping: Wrapping,
+        /// The ellipsis strategy of the text.
+        ellipsis: Ellipsis,
         /// The clip bounds of the text.
         clip_bounds: Rectangle,
     },
@@ -124,13 +128,14 @@ impl Text {
 ///
 /// [Fira Sans]: https://mozilla.github.io/Fira/
 #[cfg(feature = "fira-sans")]
-pub const FIRA_SANS_REGULAR: &[u8] =
-    include_bytes!("../fonts/FiraSans-Regular.ttf").as_slice();
+pub const FIRA_SANS_REGULAR: &[u8] = include_bytes!("../fonts/FiraSans-Regular.ttf").as_slice();
 
+/// Returns the current application-wide text scale.
 pub fn text_scale() -> f32 {
     crate::core::text::text_scale()
 }
 
+/// Sets the application-wide text scale.
 pub fn set_text_scale(scale: f32) {
     if scale != crate::core::text::text_scale() {
         crate::core::text::set_text_scale(scale);
@@ -145,16 +150,38 @@ pub fn font_system() -> &'static RwLock<FontSystem> {
     static FONT_SYSTEM: OnceLock<RwLock<FontSystem>> = OnceLock::new();
 
     FONT_SYSTEM.get_or_init(|| {
+        #[allow(unused_mut)]
+        let mut raw = cosmic_text::FontSystem::new_with_fonts([
+            cosmic_text::fontdb::Source::Binary(Arc::new(
+                include_bytes!("../fonts/Iced-Icons.ttf").as_slice(),
+            )),
+            #[cfg(feature = "fira-sans")]
+            cosmic_text::fontdb::Source::Binary(Arc::new(
+                include_bytes!("../fonts/FiraSans-Regular.ttf").as_slice(),
+            )),
+        ]);
+
+        #[cfg(feature = "fira-sans")]
+        raw.db_mut().set_sans_serif_family("Fira Sans");
+
+        #[cfg(target_os = "macos")]
+        {
+            #[cfg(not(feature = "fira-sans"))]
+            raw.db_mut().set_sans_serif_family(".SF NS");
+            raw.db_mut().set_serif_family("Times New Roman");
+            raw.db_mut().set_monospace_family("Menlo");
+        }
+
+        #[cfg(target_os = "windows")]
+        {
+            #[cfg(not(feature = "fira-sans"))]
+            raw.db_mut().set_sans_serif_family("Segoe UI");
+            raw.db_mut().set_serif_family("Times New Roman");
+            raw.db_mut().set_monospace_family("Consolas");
+        }
+
         RwLock::new(FontSystem {
-            raw: cosmic_text::FontSystem::new_with_fonts([
-                cosmic_text::fontdb::Source::Binary(Arc::new(
-                    include_bytes!("../fonts/Iced-Icons.ttf").as_slice(),
-                )),
-                #[cfg(feature = "fira-sans")]
-                cosmic_text::fontdb::Source::Binary(Arc::new(
-                    include_bytes!("../fonts/FiraSans-Regular.ttf").as_slice(),
-                )),
-            ]),
+            raw,
             loaded_fonts: HashSet::new(),
             version: Version::default(),
         })
@@ -192,11 +219,24 @@ impl FontSystem {
             }
         }
 
-        let _ = self.raw.db_mut().load_font_source(
-            cosmic_text::fontdb::Source::Binary(Arc::new(bytes.into_owned())),
-        );
+        let _ = self
+            .raw
+            .db_mut()
+            .load_font_source(cosmic_text::fontdb::Source::Binary(Arc::new(
+                bytes.into_owned(),
+            )));
 
         self.version = Version(self.version.0 + 1);
+    }
+
+    /// Returns an iterator over the family names of all font faces
+    /// in the font database.
+    pub fn families(&self) -> impl Iterator<Item = &str> {
+        self.raw
+            .db()
+            .faces()
+            .filter_map(|face| face.families.first())
+            .map(|(name, _)| name.as_str())
     }
 
     /// Returns the current [`Version`] of the [`FontSystem`].
@@ -227,6 +267,7 @@ pub struct Raw {
 }
 
 impl Raw {
+    /// Stores the current font database state for subsequent renderer creation.
     pub fn snapshot(&mut self) {
         use std::hash::{Hash, Hasher};
 
@@ -270,16 +311,16 @@ impl PartialEq for Raw {
 
 /// Measures the dimensions of the given [`cosmic_text::Buffer`].
 pub fn measure(buffer: &cosmic_text::Buffer) -> (Size, bool) {
-    let (width, height, has_rtl) = buffer.layout_runs().fold(
-        (0.0, 0.0, false),
-        |(width, height, has_rtl), run| {
-            (
-                run.line_w.max(width),
-                height + run.line_height,
-                has_rtl || run.rtl,
-            )
-        },
-    );
+    let (width, height, has_rtl) =
+        buffer
+            .layout_runs()
+            .fold((0.0, 0.0, false), |(width, height, has_rtl), run| {
+                (
+                    run.line_w.max(width),
+                    height + run.line_height,
+                    has_rtl || run.rtl,
+                )
+            });
 
     (Size::new(width, height), has_rtl)
 }
@@ -296,9 +337,10 @@ pub fn align(
 
     if let Some(align) = to_align(alignment) {
         let has_multiple_lines = buffer.lines.len() > 1
-            || buffer.lines.first().is_some_and(|line| {
-                line.layout_opt().is_some_and(|layout| layout.len() > 1)
-            });
+            || buffer
+                .lines
+                .first()
+                .is_some_and(|line| line.layout_opt().is_some_and(|layout| layout.len() > 1));
 
         if has_multiple_lines {
             for line in &mut buffer.lines {
@@ -394,10 +436,7 @@ pub fn to_shaping(shaping: Shaping, text: &str) -> cosmic_text::Shaping {
 
 #[inline]
 /// Converts some [`Shaping`] strategy to a [`cosmic_text::Shaping`] strategy.
-pub fn to_shaping_ascii(
-    shaping: Shaping,
-    is_ascii: bool,
-) -> cosmic_text::Shaping {
+pub fn to_shaping_ascii(shaping: Shaping, is_ascii: bool) -> cosmic_text::Shaping {
     match shaping {
         Shaping::Auto => {
             if is_ascii {
@@ -421,34 +460,15 @@ pub fn to_wrap(wrapping: Wrapping) -> cosmic_text::Wrap {
     }
 }
 
-/// Converts some [`Ellipsize`] strategy to a [`cosmic_text::Ellipsize`] strategy.
-pub fn to_ellipsize(
-    ellipsize: crate::core::text::Ellipsize,
-) -> cosmic_text::Ellipsize {
-    match ellipsize {
-        crate::core::text::Ellipsize::None => cosmic_text::Ellipsize::None,
-        crate::core::text::Ellipsize::Start(limit) => {
-            cosmic_text::Ellipsize::Start(to_ellipsize_height_limit(limit))
-        }
-        crate::core::text::Ellipsize::Middle(limit) => {
-            cosmic_text::Ellipsize::Middle(to_ellipsize_height_limit(limit))
-        }
-        crate::core::text::Ellipsize::End(limit) => {
-            cosmic_text::Ellipsize::End(to_ellipsize_height_limit(limit))
-        }
-    }
-}
+/// Converts some [`Ellipsis`] strategy to a [`cosmic_text::Ellipsize`] strategy.
+pub fn to_ellipsize(ellipsis: Ellipsis, max_height: f32) -> cosmic_text::Ellipsize {
+    let limit = cosmic_text::EllipsizeHeightLimit::Height(max_height);
 
-pub fn to_ellipsize_height_limit(
-    limit: crate::core::text::EllipsizeHeightLimit,
-) -> cosmic_text::EllipsizeHeightLimit {
-    match limit {
-        crate::core::text::EllipsizeHeightLimit::Lines(lines) => {
-            cosmic_text::EllipsizeHeightLimit::Lines(lines)
-        }
-        crate::core::text::EllipsizeHeightLimit::Height(height) => {
-            cosmic_text::EllipsizeHeightLimit::Height(height)
-        }
+    match ellipsis {
+        Ellipsis::None => cosmic_text::Ellipsize::None,
+        Ellipsis::Start => cosmic_text::Ellipsize::Start(limit),
+        Ellipsis::Middle => cosmic_text::Ellipsize::Middle(limit),
+        Ellipsis::End => cosmic_text::Ellipsize::End(limit),
     }
 }
 
@@ -457,6 +477,77 @@ pub fn to_color(color: Color) -> cosmic_text::Color {
     let [r, g, b, a] = color.into_rgba8();
 
     cosmic_text::Color::rgba(r, g, b, a)
+}
+
+/// Returns the ideal hint factor given the size and scale factor of some text.
+pub fn hint_factor(_size: Pixels, _scale_factor: Option<f32>) -> Option<f32> {
+    // TODO: Fix hinting in `cosmic-text`
+    // const MAX_HINTING_SIZE: f32 = 18.0;
+
+    // let hint_factor = scale_factor?;
+
+    // if size.0 * hint_factor < MAX_HINTING_SIZE {
+    //     Some(hint_factor)
+    // } else {
+    //     None
+    // }
+
+    None // Disable all text hinting for now
+}
+
+/// Computes selection regions in the given buffer.
+pub fn regions(
+    buffer: &cosmic_text::Buffer,
+    start: cosmic_text::Cursor,
+    end: cosmic_text::Cursor,
+) -> Vec<Rectangle> {
+    let mut regions = Vec::new();
+    let scroll = buffer.scroll();
+
+    for run in buffer.layout_runs() {
+        let line_i = run.line_i;
+        let line_w = run.line_w;
+        let line_top = run.line_top;
+        let line_height = run.line_height;
+        let line_break = run.line_height / 2.0;
+
+        if line_i >= start.line && line_i <= end.line {
+            let mut highlights = run.highlight(start, end).peekable();
+
+            if highlights.peek().is_none() && run.glyphs.is_empty() && end.line > line_i {
+                regions.push(Rectangle {
+                    x: 0.0,
+                    y: line_top,
+                    width: line_break,
+                    height: line_height,
+                });
+            }
+
+            while let Some((x, width)) = highlights.next() {
+                let mut min = x;
+                let mut max = x + width;
+
+                // Extend the last rect to the line edge for
+                // multi-line selections
+                if highlights.peek().is_none() && end.line > line_i {
+                    if run.rtl {
+                        min = 0.0;
+                    } else {
+                        max = line_w + line_break;
+                    }
+                }
+
+                regions.push(Rectangle {
+                    x: min - scroll.horizontal,
+                    y: line_top,
+                    width: (max - min).max(0.0),
+                    height: line_height,
+                });
+            }
+        }
+    }
+
+    regions
 }
 
 /// A text renderer coupled to `iced_graphics`.

@@ -1,7 +1,7 @@
 use crate::Error;
+use crate::core::theme::palette;
 use crate::core::time::{Duration, SystemTime};
 use crate::span;
-use crate::theme;
 
 use semver::Version;
 use serde::{Deserialize, Serialize};
@@ -28,7 +28,7 @@ pub enum Message {
         at: SystemTime,
         name: String,
         version: Version,
-        theme: Option<theme::Palette>,
+        theme: Option<palette::Seed>,
         can_time_travel: bool,
     },
     EventLogged {
@@ -42,7 +42,7 @@ pub enum Message {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Event {
-    ThemeChanged(theme::Palette),
+    ThemeChanged(palette::Seed),
     SpanStarted(span::Stage),
     SpanFinished(span::Stage, Duration),
     MessageLogged { number: usize, message: String },
@@ -80,7 +80,7 @@ impl Client {
 #[derive(Debug, Clone, Default)]
 pub struct Metadata {
     pub name: &'static str,
-    pub theme: Option<theme::Palette>,
+    pub theme: Option<palette::Seed>,
     pub can_time_travel: bool,
 }
 
@@ -119,8 +119,7 @@ async fn run(
     is_connected: Arc<AtomicBool>,
     mut receiver: mpsc::Receiver<Action>,
 ) {
-    let version = semver::Version::parse(env!("CARGO_PKG_VERSION"))
-        .expect("Parse package version");
+    let version = semver::Version::parse(env!("CARGO_PKG_VERSION")).expect("Parse package version");
 
     let command_sender = {
         // Discard by default
@@ -158,8 +157,7 @@ async fn run(
                             match receive(&mut reader, &mut buffer).await {
                                 Ok(command) => {
                                     match command {
-                                        Command::RewindTo { .. }
-                                        | Command::GoLive
+                                        Command::RewindTo { .. } | Command::GoLive
                                             if !metadata.can_time_travel =>
                                         {
                                             continue;
@@ -191,17 +189,11 @@ async fn run(
                             match send(&mut writer, message).await {
                                 Ok(()) => {}
                                 Err(error) => {
-                                    if error.kind() != io::ErrorKind::BrokenPipe
-                                    {
-                                        log::warn!(
-                                            "Error sending message to server: {error}"
-                                        );
+                                    if error.kind() != io::ErrorKind::BrokenPipe {
+                                        log::warn!("Error sending message to server: {error}");
                                     }
 
-                                    is_connected.store(
-                                        false,
-                                        atomic::Ordering::Relaxed,
-                                    );
+                                    is_connected.store(false, atomic::Ordering::Relaxed);
                                     break;
                                 }
                             }
@@ -229,8 +221,7 @@ async fn run(
 pub fn server_address_from_env() -> String {
     const DEFAULT_ADDRESS: &str = "127.0.0.1:9167";
 
-    std::env::var("ICED_BEACON_SERVER_ADDRESS")
-        .unwrap_or_else(|_| String::from(DEFAULT_ADDRESS))
+    std::env::var("ICED_BEACON_SERVER_ADDRESS").unwrap_or_else(|_| String::from(DEFAULT_ADDRESS))
 }
 
 async fn _connect() -> Result<net::TcpStream, io::Error> {
@@ -243,10 +234,7 @@ async fn _connect() -> Result<net::TcpStream, io::Error> {
     Ok(stream)
 }
 
-async fn send(
-    stream: &mut net::tcp::OwnedWriteHalf,
-    message: Message,
-) -> Result<(), io::Error> {
+async fn send(stream: &mut net::tcp::OwnedWriteHalf, message: Message) -> Result<(), io::Error> {
     let bytes = bincode::serialize(&message).expect("Encode input message");
     let size = bytes.len() as u64;
 

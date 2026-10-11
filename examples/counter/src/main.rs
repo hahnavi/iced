@@ -1,4 +1,4 @@
-use iced::widget::{button, column, text, Column};
+use iced::widget::{button, column, text, Widget};
 use iced::Center;
 
 pub fn main() -> iced::Result {
@@ -28,7 +28,7 @@ impl Counter {
         }
     }
 
-    fn view(&self) -> Column<'_, Message> {
+    fn view(&self) -> impl Widget<Message> {
         column![
             button("Increment").on_press(Message::Increment),
             text(self.value).size(50),

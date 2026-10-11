@@ -1,16 +1,13 @@
 //! This example showcases a simple native custom widget that renders using
 //! arbitrary low-level geometry.
 mod rainbow {
+    use iced::advanced::Shell;
     use iced::advanced::graphics::color;
     use iced::advanced::layout::{self, Layout};
     use iced::advanced::renderer;
     use iced::advanced::widget::{self, Widget};
-    use iced::advanced::{Clipboard, Shell};
     use iced::mouse;
-    use iced::{
-        Element, Event, Length, Rectangle, Renderer, Size, Theme,
-        Transformation, Vector,
-    };
+    use iced::{Event, Length, Rectangle, Renderer, Size, Theme, Transformation, Vector};
 
     #[derive(Debug, Clone, Copy, Default)]
     pub struct Rainbow;
@@ -18,6 +15,8 @@ mod rainbow {
     pub fn rainbow() -> Rainbow {
         Rainbow
     }
+
+    impl widget::Meta for Rainbow {}
 
     impl<Message> Widget<Message, Theme, Renderer> for Rainbow {
         fn size(&self) -> Size<Length> {
@@ -29,23 +28,22 @@ mod rainbow {
 
         fn layout(
             &mut self,
-            _tree: &mut widget::Tree,
+            tree: &mut widget::Tree,
             _renderer: &Renderer,
             limits: &layout::Limits,
-        ) -> layout::Node {
-            let width = limits.max().width;
+        ) {
+            let width = limits.max.width;
 
-            layout::Node::new(Size::new(width, width))
+            tree.size = Size::new(width, width);
         }
 
         fn update(
             &mut self,
             _state: &mut widget::Tree,
             _event: &Event,
-            layout: Layout<'_>,
+            layout: Layout,
             cursor: mouse::Cursor,
             _renderer: &Renderer,
-            _clipboard: &mut dyn Clipboard,
             shell: &mut Shell<'_, Message>,
             _viewport: &Rectangle,
         ) {
@@ -60,14 +58,12 @@ mod rainbow {
             renderer: &mut Renderer,
             _theme: &Theme,
             _style: &renderer::Style,
-            layout: Layout<'_>,
+            layout: Layout,
             cursor: mouse::Cursor,
             _viewport: &Rectangle,
         ) {
             use iced::advanced::Renderer as _;
-            use iced::advanced::graphics::mesh::{
-                self, Mesh, Renderer as _, SolidVertex2D,
-            };
+            use iced::advanced::graphics::mesh::{self, Mesh, Renderer as _, SolidVertex2D};
 
             let bounds = layout.bounds();
 
@@ -153,31 +149,22 @@ mod rainbow {
                 clip_bounds: Rectangle::INFINITE,
             };
 
-            renderer.with_translation(
-                Vector::new(bounds.x, bounds.y),
-                |renderer| {
-                    renderer.draw_mesh(mesh);
-                },
-            );
-        }
-    }
-
-    impl<Message> From<Rainbow> for Element<'_, Message> {
-        fn from(rainbow: Rainbow) -> Self {
-            Self::new(rainbow)
+            renderer.with_translation(Vector::new(bounds.x, bounds.y), |renderer| {
+                renderer.draw_mesh(mesh);
+            });
         }
     }
 }
 
 use iced::widget::{center_x, center_y, column, scrollable};
-use iced::{Element, Never};
+use iced::{Fit, Never, Widget};
 use rainbow::rainbow;
 
 pub fn main() -> iced::Result {
     iced::run((), view)
 }
 
-fn view(_state: &()) -> Element<'_, Never> {
+fn view(_state: &()) -> impl Widget<Never> {
     let content = column![
         rainbow(),
         "In this example we draw a custom widget Rainbow, using \
@@ -191,9 +178,9 @@ fn view(_state: &()) -> Element<'_, Never> {
     ]
     .padding(20)
     .spacing(20)
-    .max_width(500);
+    .width(Fit.max(500));
 
     let scrollable = scrollable(center_x(content));
 
-    center_y(scrollable).into()
+    center_y(scrollable)
 }

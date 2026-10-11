@@ -3,7 +3,7 @@
 //! # Example
 //! ```no_run
 //! # mod iced { pub mod widget { pub use iced_widget::*; } pub use iced_widget::Renderer; pub use iced_widget::core::*; }
-//! # pub type Element<'a, Message> = iced_widget::core::Element<'a, Message, iced_widget::Theme, iced_widget::Renderer>;
+//! # use iced::widget::Widget;
 //! #
 //! use iced::widget::toggler;
 //!
@@ -15,11 +15,10 @@
 //!     TogglerToggled(bool),
 //! }
 //!
-//! fn view(state: &State) -> Element<'_, Message> {
+//! fn view(state: &State) -> impl Widget<Message> {
 //!     toggler(state.is_checked)
 //!         .label("Toggle me!")
 //!         .on_toggle(Message::TogglerToggled)
-//!         .into()
 //! }
 //!
 //! fn update(state: &mut State, message: Message) {
@@ -44,13 +43,11 @@ use crate::core::renderer;
 use crate::core::text;
 use crate::core::touch;
 use crate::core::widget::tree::{self, Tree};
+use crate::core::widget::{self, Id};
+use crate::core::window;
 use crate::core::{
-    Background, Border, Clipboard, Color, Element, Event, Layout, Length,
-    Pixels, Rectangle, Shell, Size, Theme, Widget, id,
-};
-use crate::core::{
-    widget::{self, Id},
-    window,
+    Background, Border, Color, Event, Font, Layout, Length, Pixels, Rectangle, Shell, Size, Theme,
+    Widget,
 };
 
 /// A toggler widget.
@@ -58,7 +55,7 @@ use crate::core::{
 /// # Example
 /// ```no_run
 /// # mod iced { pub mod widget { pub use iced_widget::*; } pub use iced_widget::Renderer; pub use iced_widget::core::*; }
-/// # pub type Element<'a, Message> = iced_widget::core::Element<'a, Message, iced_widget::Theme, iced_widget::Renderer>;
+/// # use iced::widget::Widget;
 /// #
 /// use iced::widget::toggler;
 ///
@@ -70,11 +67,10 @@ use crate::core::{
 ///     TogglerToggled(bool),
 /// }
 ///
-/// fn view(state: &State) -> Element<'_, Message> {
+/// fn view(state: &State) -> impl Widget<Message> {
 ///     toggler(state.is_checked)
 ///         .label("Toggle me!")
 ///         .on_toggle(Message::TogglerToggled)
-///         .into()
 /// }
 ///
 /// fn update(state: &mut State, message: Message) {
@@ -85,14 +81,9 @@ use crate::core::{
 ///     }
 /// }
 /// ```
-pub struct Toggler<
-    'a,
-    Message,
-    Theme = crate::Theme,
-    Renderer = crate::Renderer,
-> where
+pub struct Toggler<'a, Message, Theme = crate::Theme>
+where
     Theme: Catalog,
-    Renderer: text::Renderer,
 {
     id: Id,
     label_id: Option<Id>,
@@ -108,21 +99,20 @@ pub struct Toggler<
     width: Length,
     size: f32,
     text_size: Option<Pixels>,
-    text_line_height: text::LineHeight,
-    text_alignment: text::Alignment,
+    line_height: Option<text::LineHeight>,
+    alignment: text::Alignment,
     text_shaping: text::Shaping,
-    text_wrapping: text::Wrapping,
-    text_ellipsize: text::Ellipsize,
+    wrapping: text::Wrapping,
+    text_ellipsize: text::Ellipsis,
     spacing: f32,
-    font: Option<Renderer::Font>,
+    font: Option<Font>,
     class: Theme::Class<'a>,
     last_status: Option<Status>,
 }
 
-impl<'a, Message, Theme, Renderer> Toggler<'a, Message, Theme, Renderer>
+impl<'a, Message, Theme> Toggler<'a, Message, Theme>
 where
     Theme: Catalog,
-    Renderer: text::Renderer,
 {
     /// The default size of a [`Toggler`].
     pub const DEFAULT_SIZE: f32 = 16.0;
@@ -145,15 +135,15 @@ where
             is_toggled,
             on_toggle: None,
             label: None,
-            width: Length::Shrink,
+            width: Length::Fit,
             size: Self::DEFAULT_SIZE,
             text_size: None,
-            text_line_height: text::LineHeight::default(),
-            text_alignment: text::Alignment::Default,
-            text_wrapping: text::Wrapping::default(),
-            text_ellipsize: text::Ellipsize::default(),
+            line_height: None,
+            alignment: text::Alignment::Default,
+            text_shaping: text::Shaping::default(),
+            wrapping: text::Wrapping::default(),
             spacing: Self::DEFAULT_SIZE / 2.0,
-            text_shaping: text::Shaping::Advanced,
+            text_ellipsize: text::Ellipsis::None,
             font: None,
             class: Theme::default(),
             last_status: None,
@@ -171,10 +161,7 @@ where
     /// the [`Toggler`].
     ///
     /// If this method is not called, the [`Toggler`] will be disabled.
-    pub fn on_toggle(
-        mut self,
-        on_toggle: impl Fn(bool) -> Message + 'a,
-    ) -> Self {
+    pub fn on_toggle(mut self, on_toggle: impl Fn(bool) -> Message + 'a) -> Self {
         self.on_toggle = Some(Box::new(on_toggle));
         self
     }
@@ -183,10 +170,7 @@ where
     /// the [`Toggler`], if `Some`.
     ///
     /// If `None`, the [`Toggler`] will be disabled.
-    pub fn on_toggle_maybe(
-        mut self,
-        on_toggle: Option<impl Fn(bool) -> Message + 'a>,
-    ) -> Self {
+    pub fn on_toggle_maybe(mut self, on_toggle: Option<impl Fn(bool) -> Message + 'a>) -> Self {
         self.on_toggle = on_toggle.map(|on_toggle| Box::new(on_toggle) as _);
         self
     }
@@ -210,37 +194,31 @@ where
     }
 
     /// Sets the text [`text::LineHeight`] of the [`Toggler`].
-    pub fn text_line_height(
-        mut self,
-        line_height: impl Into<text::LineHeight>,
-    ) -> Self {
-        self.text_line_height = line_height.into();
+    pub fn line_height(mut self, line_height: impl Into<text::LineHeight>) -> Self {
+        self.line_height = Some(line_height.into());
         self
     }
 
     /// Sets the horizontal alignment of the text of the [`Toggler`]
-    pub fn text_alignment(
-        mut self,
-        alignment: impl Into<text::Alignment>,
-    ) -> Self {
-        self.text_alignment = alignment.into();
+    pub fn alignment(mut self, alignment: impl Into<text::Alignment>) -> Self {
+        self.alignment = alignment.into();
         self
     }
 
     /// Sets the [`text::Shaping`] strategy of the [`Toggler`].
-    pub fn text_shaping(mut self, shaping: text::Shaping) -> Self {
+    pub fn shaping(mut self, shaping: text::Shaping) -> Self {
         self.text_shaping = shaping;
         self
     }
 
     /// Sets the [`text::Wrapping`] strategy of the [`Toggler`].
-    pub fn text_wrapping(mut self, wrapping: text::Wrapping) -> Self {
-        self.text_wrapping = wrapping;
+    pub fn wrapping(mut self, wrapping: text::Wrapping) -> Self {
+        self.wrapping = wrapping;
         self
     }
 
-    /// Sets the [`text::Ellipsize`] strategy of the [`Toggler`].
-    pub fn text_ellipsize(mut self, ellipsize: text::Ellipsize) -> Self {
+    /// Sets the [`text::Ellipsis`] strategy of the [`Toggler`].
+    pub fn text_ellipsize(mut self, ellipsize: text::Ellipsis) -> Self {
         self.text_ellipsize = ellipsize;
         self
     }
@@ -251,10 +229,10 @@ where
         self
     }
 
-    /// Sets the [`Renderer::Font`] of the text of the [`Toggler`]
+    /// Sets the [`Font`] of the text of the [`Toggler`]
     ///
-    /// [`Renderer::Font`]: crate::core::text::Renderer
-    pub fn font(mut self, font: impl Into<Renderer::Font>) -> Self {
+    /// [`Font`]: crate::core::Font
+    pub fn font(mut self, font: impl Into<Font>) -> Self {
         self.font = Some(font.into());
         self
     }
@@ -286,10 +264,7 @@ where
 
     #[cfg(feature = "a11y")]
     /// Sets the description of the [`Toggler`].
-    pub fn description_widget<T: iced_accessibility::Describes>(
-        mut self,
-        description: &T,
-    ) -> Self {
+    pub fn description_widget<T: iced_accessibility::Describes>(mut self, description: &T) -> Self {
         self.description = Some(iced_accessibility::Description::Id(
             description.description(),
         ));
@@ -299,95 +274,102 @@ where
     #[cfg(feature = "a11y")]
     /// Sets the description of the [`Toggler`].
     pub fn description(mut self, description: impl Into<Cow<'a, str>>) -> Self {
-        self.description =
-            Some(iced_accessibility::Description::Text(description.into()));
+        self.description = Some(iced_accessibility::Description::Text(description.into()));
         self
     }
 
     #[cfg(feature = "a11y")]
     /// Sets the label of the [`Toggler`] using another widget.
-    pub fn labeled_by_widget(
-        mut self,
-        label: &dyn iced_accessibility::Labels,
-    ) -> Self {
-        self.labeled_by_widget =
-            Some(label.label().into_iter().map(|l| l.into()).collect());
+    pub fn labeled_by_widget(mut self, label: &dyn iced_accessibility::Labels) -> Self {
+        self.labeled_by_widget = Some(label.label().into_iter().map(|l| l.into()).collect());
         self
     }
 }
 
-impl<Message, Theme, Renderer> Widget<Message, Theme, Renderer>
-    for Toggler<'_, Message, Theme, Renderer>
+impl<Message, Theme> widget::Meta for Toggler<'_, Message, Theme> where Theme: Catalog {}
+
+impl<Message, Theme, Renderer> Widget<Message, Theme, Renderer> for Toggler<'_, Message, Theme>
 where
     Theme: Catalog,
     Renderer: text::Renderer,
 {
     fn tag(&self) -> tree::Tag {
-        tree::Tag::of::<widget::text::State<Renderer::Paragraph>>()
+        tree::Tag::of::<text::paragraph::Plain<Renderer::Paragraph>>()
     }
 
     fn state(&self) -> tree::State {
-        tree::State::new(widget::text::State::<Renderer::Paragraph>::default())
+        tree::State::new(text::paragraph::Plain::<Renderer::Paragraph>::default())
     }
 
     fn size(&self) -> Size<Length> {
         Size {
             width: self.width,
-            height: Length::Shrink,
+            height: Length::Fit,
         }
     }
 
-    fn layout(
-        &mut self,
-        tree: &mut Tree,
-        renderer: &Renderer,
-        limits: &layout::Limits,
-    ) -> layout::Node {
+    fn diff(&mut self, tree: &mut Tree) {
+        // The children of the tree are the track and the label; they only
+        // carry their geometry, so no state is needed.
+        tree.children.resize_with(2, Tree::empty);
+    }
+
+    fn layout(&mut self, tree: &mut Tree, renderer: &Renderer, limits: &layout::Limits) {
         let limits = limits.width(self.width);
 
-        layout::next_to_each_other(
-            &limits,
-            self.spacing,
-            |_| layout::Node::new(crate::core::Size::new(48., 24.)),
-            |limits| {
-                if let Some(label) = self.label.as_deref() {
-                    let state = tree
-                        .state
-                        .downcast_mut::<widget::text::State<Renderer::Paragraph>>();
+        let size = if renderer::CRISP {
+            let scale_factor = renderer.hint_factor().unwrap_or(1.0);
 
-                    widget::text::layout(
-                        state,
-                        renderer,
-                        limits,
-                        label,
-                        widget::text::Format {
-                            width: self.width,
-                            height: Length::Shrink,
-                            line_height: self.text_line_height,
-                            size: self.text_size,
-                            font: self.font,
-                            align_x: self.text_alignment,
-                            align_y: alignment::Vertical::Top,
-                            shaping: self.text_shaping,
-                            wrapping: self.text_wrapping,
-                            ellipsize: self.text_ellipsize,
-                        },
-                    )
-                } else {
-                    layout::Node::new(crate::core::Size::ZERO)
-                }
-            },
-        )
+            (self.size * scale_factor).round() / scale_factor
+        } else {
+            self.size
+        };
+
+        let track = Size::new(2.0 * size, size);
+
+        let label = if let Some(label) = self.label.as_deref() {
+            let state = tree
+                .state
+                .downcast_mut::<text::paragraph::Plain<Renderer::Paragraph>>();
+
+            widget::text::layout(
+                state,
+                renderer,
+                &limits.shrink(Size::new(track.width + self.spacing, 0.0)),
+                label,
+                widget::text::Format {
+                    width: self.width,
+                    height: Length::Fit,
+                    line_height: self.line_height,
+                    size: self.text_size,
+                    font: self.font,
+                    align_x: self.alignment,
+                    align_y: alignment::Vertical::Top,
+                    shaping: self.text_shaping,
+                    wrapping: self.wrapping,
+                    ellipsis: self.text_ellipsize,
+                },
+            )
+        } else {
+            Size::ZERO
+        };
+
+        let spacing = if self.label.is_some() {
+            self.spacing
+        } else {
+            0.0
+        };
+
+        layout::next_to_each_other(tree, track, label, spacing);
     }
 
     fn update(
         &mut self,
         _tree: &mut Tree,
         event: &Event,
-        layout: Layout<'_>,
+        layout: Layout,
         cursor: mouse::Cursor,
         _renderer: &Renderer,
-        _clipboard: &mut dyn Clipboard,
         shell: &mut Shell<'_, Message>,
         _viewport: &Rectangle,
     ) {
@@ -404,6 +386,16 @@ where
                     shell.publish(on_toggle(!self.is_toggled));
                     shell.capture_event();
                 }
+            }
+            #[cfg(feature = "a11y")]
+            Event::A11y(event_id, iced_accessibility::accesskit::ActionRequest { action, .. })
+                if iced_accessibility::IdEq::eq(
+                    &iced_accessibility::A11yId::from(self.id.clone()),
+                    event_id,
+                ) && matches!(action, iced_accessibility::accesskit::Action::Click) =>
+            {
+                shell.publish(on_toggle(!self.is_toggled));
+                shell.capture_event();
             }
             _ => {}
         }
@@ -435,7 +427,7 @@ where
     fn mouse_interaction(
         &self,
         _tree: &Tree,
-        layout: Layout<'_>,
+        layout: Layout,
         cursor: mouse::Cursor,
         _viewport: &Rectangle,
         _renderer: &Renderer,
@@ -457,13 +449,10 @@ where
         renderer: &mut Renderer,
         theme: &Theme,
         defaults: &renderer::Style,
-        layout: Layout<'_>,
-        cursor: mouse::Cursor,
+        layout: Layout,
+        _cursor: mouse::Cursor,
         viewport: &Rectangle,
     ) {
-        let mut children = layout.children();
-        let toggler_layout = children.next().unwrap();
-
         let style = theme.style(
             &self.class,
             self.last_status.unwrap_or(Status::Disabled {
@@ -471,10 +460,15 @@ where
             }),
         );
 
+        let mut children = layout.iter(&tree.children);
+        let (track_layout, _) = children.next().unwrap();
+
         if self.label.is_some() {
-            let label_layout = children.next().unwrap();
-            let state: &widget::text::State<Renderer::Paragraph> =
-                tree.state.downcast_ref();
+            let (label_layout, _) = children.next().unwrap();
+
+            let state = tree
+                .state
+                .downcast_ref::<text::paragraph::Plain<Renderer::Paragraph>>();
 
             crate::text::draw(
                 renderer,
@@ -483,39 +477,14 @@ where
                 state.raw(),
                 crate::text::Style {
                     color: style.text_color,
-                    ..crate::text::Style::default()
+                    selection: None,
                 },
+                theme.selection(),
                 viewport,
             );
         }
 
-        let bounds = toggler_layout.bounds();
-        let is_mouse_over = cursor.is_over(layout.bounds());
-
-        let status = if self.on_toggle.is_none() {
-            Status::Disabled {
-                is_toggled: self.is_toggled,
-            }
-        } else if is_mouse_over {
-            Status::Hovered {
-                is_toggled: self.is_toggled,
-            }
-        } else {
-            Status::Active {
-                is_toggled: self.is_toggled,
-            }
-        };
-
-        let style = theme.style(&self.class, status);
-
-        let space = style.handle_margin;
-
-        let toggler_background_bounds = Rectangle {
-            x: bounds.x,
-            y: bounds.y,
-            width: bounds.width,
-            height: bounds.height,
-        };
+        let bounds = track_layout.bounds();
 
         renderer.fill_quad(
             renderer::Quad {
@@ -530,22 +499,33 @@ where
             style.background,
         );
 
-        let padding = (style.padding_ratio * bounds.height).round();
-        let toggler_foreground_bounds = Rectangle {
-            x: bounds.x
-                + if self.is_toggled {
-                    bounds.width - space - (bounds.height - (2.0 * space))
-                } else {
-                    space
-                },
-            y: bounds.y + space,
-            width: bounds.height - (2.0 * space),
-            height: bounds.height - (2.0 * space),
+        let toggle_bounds = {
+            // Try to align toggle to the pixel grid
+            let bounds = if renderer::CRISP {
+                let scale_factor = renderer.hint_factor().unwrap_or(1.0);
+                bounds.hint(scale_factor)
+            } else {
+                bounds
+            };
+
+            let padding = (style.padding_ratio * bounds.height).round();
+
+            Rectangle {
+                x: bounds.x
+                    + if self.is_toggled {
+                        bounds.width - bounds.height + padding
+                    } else {
+                        padding
+                    },
+                y: bounds.y + padding,
+                width: bounds.height - (2.0 * padding),
+                height: bounds.height - (2.0 * padding),
+            }
         };
 
         renderer.fill_quad(
             renderer::Quad {
-                bounds: toggler_foreground_bounds,
+                bounds: toggle_bounds,
                 border: Border {
                     radius: style.handle_radius,
                     width: style.foreground_border_width,
@@ -561,9 +541,9 @@ where
     /// get the a11y nodes for the widget
     fn a11y_nodes(
         &self,
-        layout: Layout<'_>,
-        _state: &Tree,
-        cursor: mouse::Cursor,
+        layout: Layout,
+        state: &Tree,
+        _cursor: mouse::Cursor,
     ) -> iced_accessibility::A11yTree {
         use iced_accessibility::{
             A11yNode, A11yTree,
@@ -571,7 +551,6 @@ where
         };
 
         let bounds = layout.bounds();
-        let is_hovered = cursor.is_over(bounds);
         let Rectangle {
             x,
             y,
@@ -579,15 +558,9 @@ where
             height,
         } = bounds;
 
-        let bounds = Rect::new(
-            x as f64,
-            y as f64,
-            (x + width) as f64,
-            (y + height) as f64,
-        );
+        let bounds = Rect::new(x as f64, y as f64, (x + width) as f64, (y + height) as f64);
 
         let mut node = Node::new(Role::Switch);
-        node.add_action(Action::Focus);
         node.add_action(Action::Click);
         node.set_bounds(bounds);
         if let Some(name) = self.name.as_ref() {
@@ -607,25 +580,41 @@ where
             }
             None => {}
         }
-        node.set_selected(self.is_toggled);
-        // TODO hover
-        // if is_hovered {
-        //     node.set_hovered();
-        // }
-        node.add_action(Action::Click);
+        node.set_toggled(self.is_toggled.into());
+
+        if self.on_toggle.is_none() {
+            node.set_disabled();
+        }
+
         if let Some(label) = self.label.as_ref() {
             let mut label_node = Node::new(Role::Label);
 
             label_node.set_label(label.clone());
-            // TODO proper label bounds for the label
-            label_node.set_bounds(bounds);
+            let (label_layout, _) = layout.iter(&state.children).nth(1).unwrap();
+            let label_bounds = label_layout
+                .with_virtual_offset(layout.virtual_offset())
+                .bounds();
+            label_node.set_bounds(Rect::new(
+                f64::from(label_bounds.x),
+                f64::from(label_bounds.y),
+                f64::from(label_bounds.x + label_bounds.width),
+                f64::from(label_bounds.y + label_bounds.height),
+            ));
+
+            if self.name.is_none() {
+                node.set_labelled_by(vec![NodeId::from(iced_accessibility::A11yId::from(
+                    self.label_id.clone().unwrap(),
+                ))]);
+            }
 
             A11yTree::node_with_child_tree(
                 A11yNode::new(node, self.id.clone()),
                 A11yTree::leaf(label_node, self.label_id.clone().unwrap()),
             )
         } else {
-            if let Some(labeled_by_widget) = self.labeled_by_widget.as_ref() {
+            if self.name.is_none()
+                && let Some(labeled_by_widget) = self.labeled_by_widget.as_ref()
+            {
                 node.set_labelled_by(labeled_by_widget.clone());
             }
             A11yTree::leaf(node, self.id.clone())
@@ -634,38 +623,24 @@ where
 
     fn id(&self) -> Option<Id> {
         if self.label.is_some() {
-            Some(Id(iced_runtime::core::id::Internal::Set(vec![
-                self.id.0.clone(),
-                self.label_id.clone().unwrap().0,
-            ])))
+            Some(Id::grouped([
+                self.id.clone(),
+                self.label_id.clone().unwrap(),
+            ]))
         } else {
             Some(self.id.clone())
         }
     }
 
     fn set_id(&mut self, id: Id) {
-        if let Id(id::Internal::Set(list)) = id {
+        if let Some(list) = id.grouped_ids() {
             if list.len() == 2 && self.label.is_some() {
-                self.id.0 = list[0].clone();
-                self.label_id = Some(Id(list[1].clone()));
+                self.id = list[0].clone();
+                self.label_id = Some(list[1].clone());
             }
         } else if self.label.is_none() {
             self.id = id;
         }
-    }
-}
-
-impl<'a, Message, Theme, Renderer> From<Toggler<'a, Message, Theme, Renderer>>
-    for Element<'a, Message, Theme, Renderer>
-where
-    Message: 'a,
-    Theme: Catalog + 'a,
-    Renderer: text::Renderer + 'a,
-{
-    fn from(
-        toggler: Toggler<'a, Message, Theme, Renderer>,
-    ) -> Element<'a, Message, Theme, Renderer> {
-        Element::new(toggler)
     }
 }
 
@@ -726,6 +701,9 @@ pub trait Catalog: Sized {
 
     /// The [`Style`] of a class with the given status.
     fn style(&self, class: &Self::Class<'_>, status: Status) -> Style;
+
+    /// The global selection [`Color`].
+    fn selection(&self) -> Color;
 }
 
 /// A styling function for a [`Toggler`].
@@ -743,11 +721,15 @@ impl Catalog for Theme {
     fn style(&self, class: &Self::Class<'_>, status: Status) -> Style {
         class(self, status)
     }
+
+    fn selection(&self) -> Color {
+        self.palette().background.strongest.color
+    }
 }
 
 /// The default style of a [`Toggler`].
 pub fn default(theme: &Theme, status: Status) -> Style {
-    let palette = theme.extended_palette();
+    let palette = theme.palette();
 
     let background = match status {
         Status::Active { is_toggled } | Status::Hovered { is_toggled } => {

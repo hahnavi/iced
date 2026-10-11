@@ -2,12 +2,12 @@ use iced::border;
 use iced::keyboard;
 use iced::mouse;
 use iced::widget::{
-    button, canvas, center, center_y, checkbox, column, container, pick_list,
-    pin, responsive, row, rule, scrollable, space, stack, text,
+    button, canvas, center, center_y, checkbox, column, container, pick_list, pin, responsive, row,
+    rule, scrollable, space, stack, text,
 };
 use iced::{
-    Center, Element, Fill, Font, Length, Point, Rectangle, Renderer, Shrink,
-    Subscription, Theme, color,
+    Center, Element, Fill, FillPortion, Font, Length, Point, Rectangle, Renderer, Shrink,
+    Subscription, Theme, Widget, color,
 };
 
 pub fn main() -> iced::Result {
@@ -69,37 +69,34 @@ impl Layout {
             };
 
             match modified_key {
-                keyboard::Key::Named(key::Named::ArrowLeft) => {
-                    Some(Message::Previous)
-                }
-                keyboard::Key::Named(key::Named::ArrowRight) => {
-                    Some(Message::Next)
-                }
+                keyboard::Key::Named(key::Named::ArrowLeft) => Some(Message::Previous),
+                keyboard::Key::Named(key::Named::ArrowRight) => Some(Message::Next),
                 _ => None,
             }
         })
     }
 
-    fn view(&self) -> Element<'_, Message> {
+    fn view(&self) -> impl Widget<Message> {
         let header = row![
             text(self.example.title).size(20).font(Font::MONOSPACE),
             space::horizontal(),
             checkbox(self.explain)
                 .label("Explain")
                 .on_toggle(Message::ExplainToggled),
-            pick_list(Theme::ALL, self.theme.as_ref(), Message::ThemeSelected)
+            pick_list(self.theme.as_ref(), Theme::ALL, Theme::to_string)
+                .on_select(Message::ThemeSelected)
                 .placeholder("Theme"),
         ]
         .spacing(20)
         .align_y(Center);
 
         let example = center(if self.explain {
-            self.example.view().explain(color!(0x0000ff))
+            self.example.view().explain(color!(0x0000ff)).boxed()
         } else {
-            self.example.view()
+            self.example.view().boxed()
         })
-        .style(|theme| {
-            let palette = theme.extended_palette();
+        .style(|theme: &Theme| {
+            let palette = theme.palette();
 
             container::Style::default()
                 .border(border::color(palette.background.strong.color).width(4))
@@ -120,10 +117,7 @@ impl Layout {
             ),
         ];
 
-        column![header, example, controls]
-            .spacing(10)
-            .padding(20)
-            .into()
+        column![header, example, controls].spacing(10).padding(20)
     }
 
     fn theme(&self) -> Option<Theme> {
@@ -182,9 +176,7 @@ impl Example {
     }
 
     fn previous(self) -> Self {
-        let Some(index) =
-            Self::LIST.iter().position(|&example| example == self)
-        else {
+        let Some(index) = Self::LIST.iter().position(|&example| example == self) else {
             return self;
         };
 
@@ -195,16 +187,14 @@ impl Example {
     }
 
     fn next(self) -> Self {
-        let Some(index) =
-            Self::LIST.iter().position(|&example| example == self)
-        else {
+        let Some(index) = Self::LIST.iter().position(|&example| example == self) else {
             return self;
         };
 
         Self::LIST.get(index + 1).copied().unwrap_or(self)
     }
 
-    fn view(&self) -> Element<'_, Message> {
+    fn view(&self) -> impl Widget<Message> {
         (self.view)()
     }
 }
@@ -222,7 +212,7 @@ impl PartialEq for Example {
 }
 
 fn centered<'a>() -> Element<'a, Message> {
-    center(text("I am centered!").size(50)).into()
+    center(text("I am centered!").size(50)).boxed()
 }
 
 fn column_<'a>() -> Element<'a, Message> {
@@ -236,7 +226,7 @@ fn column_<'a>() -> Element<'a, Message> {
         "elements can be configured!",
     ]
     .spacing(40)
-    .into()
+    .boxed()
 }
 
 fn row_<'a>() -> Element<'a, Message> {
@@ -248,11 +238,11 @@ fn row_<'a>() -> Element<'a, Message> {
         "but lays out widgets horizontally!",
     ]
     .spacing(40)
-    .into()
+    .boxed()
 }
 
 fn space_<'a>() -> Element<'a, Message> {
-    row!["Left!", space::horizontal(), "Right!"].into()
+    row!["Left!", space::horizontal(), "Right!"].boxed()
 }
 
 fn application<'a>() -> Element<'a, Message> {
@@ -267,21 +257,21 @@ fn application<'a>() -> Element<'a, Message> {
         .padding(10)
         .align_y(Center),
     )
-    .style(|theme| {
-        let palette = theme.extended_palette();
+    .style(|theme: &Theme| {
+        let palette = theme.palette();
 
-        container::Style::default()
-            .border(border::color(palette.background.strong.color).width(1))
+        container::Style::default().border(border::color(palette.background.strong.color).width(1))
     });
 
     let sidebar = center_y(
         column!["Sidebar!", square(50), square(50)]
             .spacing(40)
             .padding(10)
-            .width(200)
+            .width(Fill)
             .align_x(Center),
     )
-    .style(container::rounded_box);
+    .style(container::rounded_box)
+    .width(Fill.min(150).max(200));
 
     let content = container(
         scrollable(
@@ -299,26 +289,22 @@ fn application<'a>() -> Element<'a, Message> {
         )
         .height(Fill),
     )
-    .padding(10);
+    .padding(10)
+    .width(FillPortion(3));
 
-    column![header, row![sidebar, content]].into()
+    column![header, row![sidebar, content]].boxed()
 }
 
 fn quotes<'a>() -> Element<'a, Message> {
-    fn quote<'a>(
-        content: impl Into<Element<'a, Message>>,
-    ) -> Element<'a, Message> {
-        row![rule::vertical(1), content.into()]
-            .spacing(10)
-            .height(Shrink)
-            .into()
+    fn quote<'a>(content: impl Widget<Message> + 'a) -> impl Widget<Message> + 'a {
+        row![rule::vertical(1), content].spacing(10).height(Shrink)
     }
 
     fn reply<'a>(
-        original: impl Into<Element<'a, Message>>,
-        reply: impl Into<Element<'a, Message>>,
-    ) -> Element<'a, Message> {
-        column![quote(original), reply.into()].spacing(10).into()
+        original: impl Widget<Message> + 'a,
+        reply: impl Widget<Message> + 'a,
+    ) -> impl Widget<Message> {
+        column![quote(original), reply].spacing(10)
     }
 
     column![
@@ -331,7 +317,7 @@ fn quotes<'a>() -> Element<'a, Message> {
     ]
     .width(Shrink)
     .spacing(10)
-    .into()
+    .boxed()
 }
 
 fn pinning<'a>() -> Element<'a, Message> {
@@ -348,7 +334,7 @@ fn pinning<'a>() -> Element<'a, Message> {
     ]
     .align_x(Center)
     .spacing(10)
-    .into()
+    .boxed()
 }
 
 fn responsive_<'a>() -> Element<'a, Message> {
@@ -361,7 +347,6 @@ fn responsive_<'a>() -> Element<'a, Message> {
             .width(size.width / 4.0)
             .height(size.width / 4.0)
             .style(container::bordered_box)
-            .into()
         })
         .width(Shrink)
         .height(Shrink),
@@ -369,14 +354,12 @@ fn responsive_<'a>() -> Element<'a, Message> {
             let size = size.ratio(16.0 / 9.0);
 
             container(center(
-                text!("{:.0}x{:.0}px (16:9)", size.width, size.height)
-                    .font(Font::MONOSPACE),
+                text!("{:.0}x{:.0}px (16:9)", size.width, size.height).font(Font::MONOSPACE),
             ))
             .clip(true)
             .width(size.width)
             .height(size.height)
             .style(container::bordered_box)
-            .into()
         })
         .width(Shrink)
         .height(Shrink)
@@ -384,10 +367,10 @@ fn responsive_<'a>() -> Element<'a, Message> {
     .align_x(Center)
     .spacing(10)
     .padding(10)
-    .into()
+    .boxed()
 }
 
-fn square<'a>(size: impl Into<Length> + Copy) -> Element<'a, Message> {
+fn square(size: impl Into<Length> + Copy) -> impl Widget<Message> {
     struct Square;
 
     impl canvas::Program<Message> for Square {
@@ -403,7 +386,7 @@ fn square<'a>(size: impl Into<Length> + Copy) -> Element<'a, Message> {
         ) -> Vec<canvas::Geometry> {
             let mut frame = canvas::Frame::new(renderer, bounds.size());
 
-            let palette = theme.extended_palette();
+            let palette = theme.palette();
 
             frame.fill_rectangle(
                 Point::ORIGIN,
@@ -415,5 +398,5 @@ fn square<'a>(size: impl Into<Length> + Copy) -> Element<'a, Message> {
         }
     }
 
-    canvas(Square).width(size).height(size).into()
+    canvas(Square).width(size).height(size)
 }

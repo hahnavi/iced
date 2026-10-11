@@ -5,8 +5,8 @@ use crate::gradient;
 
 use bytemuck::{Pod, Zeroable};
 
+use std::sync::Arc;
 use std::sync::atomic::{self, AtomicU64};
-use std::sync::{Arc, Weak};
 
 /// A low-level primitive to render a mesh of triangles.
 #[derive(Debug, Clone, PartialEq)]
@@ -47,8 +47,9 @@ impl Mesh {
     /// Returns the [`Transformation`] of the [`Mesh`].
     pub fn transformation(&self) -> Transformation {
         match self {
-            Self::Solid { transformation, .. }
-            | Self::Gradient { transformation, .. } => *transformation,
+            Self::Solid { transformation, .. } | Self::Gradient { transformation, .. } => {
+                *transformation
+            }
         }
     }
 
@@ -179,13 +180,8 @@ impl Cache {
     }
 
     /// Returns the batch of meshes in the [`Cache`].
-    pub fn batch(&self) -> &[Mesh] {
+    pub fn batch(&self) -> &Arc<[Mesh]> {
         &self.batch
-    }
-
-    /// Returns a [`Weak`] reference to the contents of the [`Cache`].
-    pub fn downgrade(&self) -> Weak<[Mesh]> {
-        Arc::downgrade(&self.batch)
     }
 
     /// Returns true if the [`Cache`] is empty.

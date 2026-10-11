@@ -24,7 +24,6 @@
 #![allow(missing_docs)]
 pub mod layer;
 pub mod primitive;
-pub mod settings;
 pub mod window;
 
 #[cfg(feature = "geometry")]
@@ -33,6 +32,7 @@ pub mod geometry;
 mod buffer;
 mod color;
 mod engine;
+mod nudge;
 mod quad;
 mod text;
 mod triangle;
@@ -57,16 +57,12 @@ pub use wgpu;
 pub use engine::Engine;
 pub use layer::Layer;
 pub use primitive::Primitive;
-pub use settings::Settings;
 
 #[cfg(feature = "geometry")]
 pub use geometry::Geometry;
 
 use crate::core::renderer;
-use crate::core::{
-    Background, Color, Font, Pixels, Point, Radians, Rectangle, Size,
-    Transformation, Vector, image::FilterMethod,
-};
+use crate::core::{Background, Color, Font, Point, Rectangle, Size, Transformation};
 use crate::graphics::mesh;
 use crate::graphics::text::{Editor, Paragraph};
 use crate::graphics::{Shell, Viewport};
@@ -77,10 +73,10 @@ use crate::graphics::{Shell, Viewport};
 /// [`iced`]: https://github.com/iced-rs/iced
 pub struct Renderer {
     engine: Engine,
+    settings: renderer::Settings,
 
-    default_font: Font,
-    default_text_size: Pixels,
     layers: layer::Stack,
+    scale: Option<renderer::Scale>,
 
     quad: quad::State,
     triangle: triangle::State,
@@ -98,25 +94,15 @@ pub struct Renderer {
 }
 
 impl Renderer {
-    pub fn new(
-        engine: Engine,
-        default_font: Font,
-        default_text_size: Pixels,
-    ) -> Self {
-        let mut text = text::State::new();
-        text.prewarm(&engine.text_pipeline, &engine.device);
-
+    pub fn new(engine: Engine, settings: renderer::Settings) -> Self {
         Self {
-            default_font,
-            default_text_size,
+            settings,
             layers: layer::Stack::new(),
+            scale: None,
 
             quad: quad::State::new(),
-            triangle: triangle::State::new(
-                &engine.device,
-                &engine.triangle_pipeline,
-            ),
-            text,
+            triangle: triangle::State::new(&engine.device, &engine.triangle_pipeline),
+            text: text::State::new(),
             text_viewport: engine.text_pipeline.create_viewport(&engine.device),
 
             #[cfg(any(feature = "svg", feature = "image"))]
@@ -137,17 +123,22 @@ impl Renderer {
         }
     }
 
-    fn draw(
+    /// Record commands that draw the current primitives to the target texture view.
+    ///
+    /// You must call [`finish`](Self::finish) and [`recall`](Self::recall) when submitting
+    /// the resulting [`wgpu::CommandEncoder`].
+    pub fn draw(
         &mut self,
         clear_color: Option<Color>,
         target: &wgpu::TextureView,
         viewport: &Viewport,
     ) -> wgpu::CommandEncoder {
-        let mut encoder = self.engine.device.create_command_encoder(
-            &wgpu::CommandEncoderDescriptor {
-                label: Some("iced_wgpu encoder"),
-            },
-        );
+        let mut encoder =
+            self.engine
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("iced_wgpu encoder"),
+                });
 
         self.prepare(&mut encoder, viewport);
         self.render(&mut encoder, target, clear_color, viewport);
@@ -186,11 +177,7 @@ impl Renderer {
     /// Renders the current surface to an offscreen buffer.
     ///
     /// Returns RGBA bytes of the texture data.
-    pub fn screenshot(
-        &mut self,
-        viewport: &Viewport,
-        background_color: Color,
-    ) -> Vec<u8> {
+    pub fn screenshot(&mut self, viewport: &Viewport, background_color: Color) -> Vec<u8> {
         #[derive(Clone, Copy, Debug)]
         struct BufferDimensions {
             width: u32,
@@ -203,11 +190,9 @@ impl Renderer {
             fn new(size: Size<u32>) -> Self {
                 let unpadded_bytes_per_row = size.width as usize * 4; //slice of buffer per row; always RGBA
                 let alignment = wgpu::COPY_BYTES_PER_ROW_ALIGNMENT as usize; //256
-                let padded_bytes_per_row_padding = (alignment
-                    - unpadded_bytes_per_row % alignment)
-                    % alignment;
-                let padded_bytes_per_row =
-                    unpadded_bytes_per_row + padded_bytes_per_row_padding;
+                let padded_bytes_per_row_padding =
+                    (alignment - unpadded_bytes_per_row % alignment) % alignment;
+                let padded_bytes_per_row = unpadded_bytes_per_row + padded_bytes_per_row_padding;
 
                 Self {
                     width: size.width,
@@ -226,19 +211,18 @@ impl Renderer {
             depth_or_array_layers: 1,
         };
 
-        let texture =
-            self.engine.device.create_texture(&wgpu::TextureDescriptor {
-                label: Some("iced_wgpu.offscreen.source_texture"),
-                size: texture_extent,
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format: self.engine.format,
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
-                    | wgpu::TextureUsages::COPY_SRC
-                    | wgpu::TextureUsages::TEXTURE_BINDING,
-                view_formats: &[],
-            });
+        let texture = self.engine.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("iced_wgpu.offscreen.source_texture"),
+            size: texture_extent,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: self.engine.format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                | wgpu::TextureUsages::COPY_SRC
+                | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
 
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
@@ -255,15 +239,12 @@ impl Renderer {
             },
         );
 
-        let output_buffer =
-            self.engine.device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("iced_wgpu.offscreen.output_texture_buffer"),
-                size: (dimensions.padded_bytes_per_row
-                    * dimensions.height as usize) as u64,
-                usage: wgpu::BufferUsages::MAP_READ
-                    | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            });
+        let output_buffer = self.engine.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("iced_wgpu.offscreen.output_texture_buffer"),
+            size: (dimensions.padded_bytes_per_row * dimensions.height as usize) as u64,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
 
         encoder.copy_texture_to_buffer(
             texture.as_image_copy(),
@@ -290,39 +271,31 @@ impl Renderer {
             timeout: None,
         });
 
-        let mapped_buffer = slice.get_mapped_range();
+        let mapped_buffer = slice.get_mapped_range().unwrap();
 
-        mapped_buffer.chunks(dimensions.padded_bytes_per_row).fold(
-            vec![],
-            |mut acc, row| {
+        mapped_buffer
+            .chunks(dimensions.padded_bytes_per_row)
+            .fold(vec![], |mut acc, row| {
                 acc.extend(&row[..dimensions.unpadded_bytes_per_row]);
                 acc
-            },
-        )
+            })
     }
 
-    fn prepare(
-        &mut self,
-        encoder: &mut wgpu::CommandEncoder,
-        viewport: &Viewport,
-    ) {
+    fn prepare(&mut self, encoder: &mut wgpu::CommandEncoder, viewport: &Viewport) {
         let scale_factor = viewport.scale_factor();
 
         self.text_viewport
             .update(&self.engine.queue, viewport.physical_size());
 
-        let physical_bounds = Rectangle::<f32>::from(Rectangle::with_size(
-            viewport.physical_size(),
-        ));
+        let physical_bounds =
+            Rectangle::<f32>::from(Rectangle::with_size(viewport.physical_size()));
 
         self.layers.merge();
 
         for layer in self.layers.iter() {
-            let clip_bounds = layer.bounds * scale_factor as f32;
-
             if physical_bounds
-                .intersection(&clip_bounds)
-                .and_then(Rectangle::snap)
+                .intersection(&(layer.bounds * scale_factor))
+                .and_then(nudge::snap)
                 .is_none()
             {
                 continue;
@@ -429,8 +402,8 @@ impl Renderer {
     ) {
         use std::mem::ManuallyDrop;
 
-        let mut render_pass = ManuallyDrop::new(encoder.begin_render_pass(
-            &wgpu::RenderPassDescriptor {
+        let mut render_pass =
+            ManuallyDrop::new(encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("iced_wgpu render pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: frame,
@@ -440,13 +413,12 @@ impl Renderer {
                         load: match clear_color {
                             Some(background_color) => wgpu::LoadOp::Clear({
                                 let [r, g, b, a] =
-                                    graphics::color::pack(background_color)
-                                        .components();
+                                    graphics::color::pack(background_color).components();
 
                                 wgpu::Color {
-                                    r: f64::from(r),
-                                    g: f64::from(g),
-                                    b: f64::from(b),
+                                    r: f64::from(r * a),
+                                    g: f64::from(g * a),
+                                    b: f64::from(b * a),
                                     a: f64::from(a),
                                 }
                             }),
@@ -459,8 +431,7 @@ impl Renderer {
                 timestamp_writes: None,
                 occlusion_query_set: None,
                 multiview_mask: None,
-            },
-        ));
+            }));
 
         let mut quad_layer = 0;
         let mut mesh_layer = 0;
@@ -470,20 +441,19 @@ impl Renderer {
         let mut image_layer = 0;
 
         let scale_factor = viewport.scale_factor();
-        let physical_bounds = Rectangle::<f32>::from(Rectangle::with_size(
-            viewport.physical_size(),
-        ));
+        let physical_bounds =
+            Rectangle::<f32>::from(Rectangle::with_size(viewport.physical_size()));
 
         let scale = Transformation::scale(scale_factor as f32);
 
         for layer in self.layers.iter() {
-            let Some(physical_bounds) = physical_bounds
-                .intersection(&(layer.bounds * scale_factor as f32))
+            let Some(physical_bounds) =
+                physical_bounds.intersection(&(layer.bounds * scale_factor as f32))
             else {
                 continue;
             };
 
-            let Some(scissor_rect) = physical_bounds.snap() else {
+            let Some(scissor_rect) = nudge::snap(physical_bounds) else {
                 continue;
             };
 
@@ -516,26 +486,23 @@ impl Renderer {
                 );
                 render_span.finish();
 
-                render_pass = ManuallyDrop::new(encoder.begin_render_pass(
-                    &wgpu::RenderPassDescriptor {
+                render_pass =
+                    ManuallyDrop::new(encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                         label: Some("iced_wgpu render pass"),
-                        color_attachments: &[Some(
-                            wgpu::RenderPassColorAttachment {
-                                view: frame,
-                                depth_slice: None,
-                                resolve_target: None,
-                                ops: wgpu::Operations {
-                                    load: wgpu::LoadOp::Load,
-                                    store: wgpu::StoreOp::Store,
-                                },
+                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                            view: frame,
+                            depth_slice: None,
+                            resolve_target: None,
+                            ops: wgpu::Operations {
+                                load: wgpu::LoadOp::Load,
+                                store: wgpu::StoreOp::Store,
                             },
-                        )],
+                        })],
                         depth_stencil_attachment: None,
                         timestamp_writes: None,
                         occlusion_query_set: None,
                         multiview_mask: None,
-                    },
-                ));
+                    }));
             }
 
             if !layer.primitives.is_empty() {
@@ -554,7 +521,7 @@ impl Renderer {
 
                     if let Some(clip_bounds) = (instance.bounds * scale)
                         .intersection(&physical_bounds)
-                        .and_then(Rectangle::snap)
+                        .and_then(nudge::snap)
                     {
                         render_pass.set_viewport(
                             bounds.x,
@@ -602,34 +569,28 @@ impl Renderer {
                     let _ = ManuallyDrop::into_inner(render_pass);
 
                     for (instance, clip_bounds) in need_render {
-                        instance.primitive.render(
-                            &primitive_storage,
-                            encoder,
-                            frame,
-                            &clip_bounds,
-                        );
+                        instance
+                            .primitive
+                            .render(&primitive_storage, encoder, frame, &clip_bounds);
                     }
 
-                    render_pass = ManuallyDrop::new(encoder.begin_render_pass(
-                        &wgpu::RenderPassDescriptor {
+                    render_pass =
+                        ManuallyDrop::new(encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                             label: Some("iced_wgpu render pass"),
-                            color_attachments: &[Some(
-                                wgpu::RenderPassColorAttachment {
-                                    view: frame,
-                                    depth_slice: None,
-                                    resolve_target: None,
-                                    ops: wgpu::Operations {
-                                        load: wgpu::LoadOp::Load,
-                                        store: wgpu::StoreOp::Store,
-                                    },
+                            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                                view: frame,
+                                depth_slice: None,
+                                resolve_target: None,
+                                ops: wgpu::Operations {
+                                    load: wgpu::LoadOp::Load,
+                                    store: wgpu::StoreOp::Store,
                                 },
-                            )],
+                            })],
                             depth_stencil_attachment: None,
                             timestamp_writes: None,
                             occlusion_query_set: None,
                             multiview_mask: None,
-                        },
-                    ));
+                        }));
                 }
 
                 render_span.finish();
@@ -671,56 +632,33 @@ impl Renderer {
                 .filter(|layer| {
                     !layer.is_empty()
                         && physical_bounds
-                            .intersection(&(layer.bounds * scale_factor as f32))
-                            .is_some_and(|viewport| viewport.snap().is_some())
+                            .intersection(&(layer.bounds * scale_factor))
+                            .is_some_and(|viewport| nudge::snap(viewport).is_some())
                 })
                 .count()
         });
     }
 
-    fn draw_overlay(
-        &mut self,
-        overlay: &[impl AsRef<str>],
-        viewport: &Viewport,
-    ) {
-        use crate::core::Renderer as _;
-        use crate::core::alignment;
-        use crate::core::text::Renderer as _;
+    /// Prepares currently mapped buffers for use in a submission.
+    ///
+    /// Usually, this method is only needed if you are calling [`Renderer::draw`] directly,
+    /// instead of relying on [`Renderer::present`].
+    ///
+    /// You must call this method _before_ submitting the resulting [`wgpu::CommandEncoder`]
+    /// of [`Renderer::draw`] to a [`wgpu::Queue`].
+    pub fn finish(&mut self) {
+        self.staging_belt.finish();
+    }
 
-        self.with_layer(
-            Rectangle::with_size(viewport.logical_size()),
-            |renderer| {
-                for (i, line) in overlay.iter().enumerate() {
-                    let text = crate::core::Text {
-                        content: line.as_ref().to_owned(),
-                        bounds: viewport.logical_size(),
-                        size: Pixels(20.0),
-                        line_height: core::text::LineHeight::default(),
-                        font: Font::MONOSPACE,
-                        align_x: core::text::Alignment::Left,
-                        align_y: alignment::Vertical::Top,
-                        shaping: core::text::Shaping::Advanced,
-                        wrapping: core::text::Wrapping::Word,
-                        ellipsize: core::text::Ellipsize::None,
-                    };
-
-                    renderer.fill_text(
-                        text.clone(),
-                        Point::new(11.0, 11.0 + 25.0 * i as f32),
-                        Color::from_rgba(0.9, 0.9, 0.9, 1.0),
-                        Rectangle::with_size(Size::INFINITE),
-                    );
-
-                    renderer.fill_text(
-                        text,
-                        Point::new(11.0, 11.0 + 25.0 * i as f32)
-                            + Vector::new(-1.0, -1.0),
-                        Color::BLACK,
-                        Rectangle::with_size(Size::INFINITE),
-                    );
-                }
-            },
-        );
+    /// Recalls all of the closed buffers back to be reused.
+    ///
+    /// Usually, this method is only needed if you are calling [`Renderer::draw`] directly,
+    /// instead of relying on [`Renderer::present`] to a [`wgpu::Queue`].
+    ///
+    /// You must call this method _after_ submitting the resulting [`wgpu::CommandEncoder`]
+    /// of [`Renderer::draw`] to a [`wgpu::Queue`].
+    pub fn recall(&mut self) {
+        self.staging_belt.recall();
     }
 }
 
@@ -741,40 +679,55 @@ impl core::Renderer for Renderer {
         self.layers.pop_transformation();
     }
 
-    fn fill_quad(
-        &mut self,
-        quad: core::renderer::Quad,
-        background: impl Into<Background>,
-    ) {
+    fn fill_quad(&mut self, quad: core::renderer::Quad, background: impl Into<Background>) {
         let (layer, transformation) = self.layers.current_mut();
         layer.draw_quad(quad, background.into(), transformation);
+    }
+
+    fn allocate_image(
+        &self,
+        _handle: &core::image::Handle,
+        _callback: impl FnOnce(Result<core::image::Allocation, core::image::Error>) + Send + 'static,
+    ) {
+        #[cfg(feature = "image")]
+        self.image_cache
+            .borrow_mut()
+            .allocate_image(_handle, _callback);
+    }
+
+    fn hint(&mut self, scale_factor: renderer::Scale) {
+        self.scale = Some(scale_factor);
+    }
+
+    fn scale(&self) -> Option<renderer::Scale> {
+        let scale_factor = self.scale?;
+
+        Some(renderer::Scale {
+            application: scale_factor.application * self.layers.transformation().scale_factor(),
+            ..scale_factor
+        })
+    }
+
+    fn tick(&mut self) {
+        #[cfg(feature = "image")]
+        self.image_cache.get_mut().receive();
     }
 
     fn reset(&mut self, new_bounds: Rectangle) {
         self.layers.reset(new_bounds);
     }
 
-    fn allocate_image(
-        &mut self,
-        _handle: &core::image::Handle,
-        _callback: impl FnOnce(Result<core::image::Allocation, core::image::Error>)
-        + Send
-        + 'static,
-    ) {
-        #[cfg(feature = "image")]
-        self.image_cache
-            .get_mut()
-            .allocate_image(_handle, _callback);
+    fn settings(&self) -> renderer::Settings {
+        self.settings
     }
 }
 
 impl core::text::Renderer for Renderer {
-    type Font = Font;
     type Paragraph = Paragraph;
     type Editor = Editor;
     type Raw = Raw;
 
-    const ICON_FONT: Font = Font::with_name("Iced-Icons");
+    const ICON_FONT: Font = Font::new("Iced-Icons");
     const CHECKMARK_ICON: char = '\u{f00c}';
     const ARROW_DOWN_ICON: char = '\u{e800}';
     const ICED_LOGO: char = '\u{e801}';
@@ -782,14 +735,6 @@ impl core::text::Renderer for Renderer {
     const SCROLL_DOWN_ICON: char = '\u{e803}';
     const SCROLL_LEFT_ICON: char = '\u{e804}';
     const SCROLL_RIGHT_ICON: char = '\u{e805}';
-
-    fn default_font(&self) -> Self::Font {
-        self.default_font
-    }
-
-    fn default_size(&self) -> Pixels {
-        self.default_text_size
-    }
 
     fn fill_paragraph(
         &mut self,
@@ -800,13 +745,7 @@ impl core::text::Renderer for Renderer {
     ) {
         let (layer, transformation) = self.layers.current_mut();
 
-        layer.draw_paragraph(
-            text,
-            position,
-            color,
-            clip_bounds,
-            transformation,
-        );
+        layer.draw_paragraph(text, position, color, clip_bounds, transformation);
     }
 
     fn fill_editor(
@@ -852,23 +791,16 @@ impl core::image::Renderer for Renderer {
         &self,
         handle: &Self::Handle,
     ) -> Result<core::image::Allocation, core::image::Error> {
-        self.image_cache.borrow_mut().load_image(
-            &self.engine.device,
-            &self.engine.queue,
-            handle,
-        )
+        self.image_cache
+            .borrow_mut()
+            .load_image(&self.engine.device, &self.engine.queue, handle)
     }
 
     fn measure_image(&self, handle: &Self::Handle) -> Option<core::Size<u32>> {
         self.image_cache.borrow_mut().measure_image(handle)
     }
 
-    fn draw_image(
-        &mut self,
-        image: core::Image,
-        bounds: Rectangle,
-        clip_bounds: Rectangle,
-    ) {
+    fn draw_image(&mut self, image: core::Image, bounds: Rectangle, clip_bounds: Rectangle) {
         let (layer, transformation) = self.layers.current_mut();
         layer.draw_raster(image, bounds, clip_bounds, transformation);
     }
@@ -880,12 +812,7 @@ impl core::svg::Renderer for Renderer {
         self.image_cache.borrow_mut().measure_svg(handle)
     }
 
-    fn draw_svg(
-        &mut self,
-        svg: core::Svg,
-        bounds: Rectangle,
-        clip_bounds: Rectangle,
-    ) {
+    fn draw_svg(&mut self, svg: core::Svg, bounds: Rectangle, clip_bounds: Rectangle) {
         let (layer, transformation) = self.layers.current_mut();
         layer.draw_svg(svg, bounds, clip_bounds, transformation);
     }
@@ -970,20 +897,15 @@ impl graphics::compositor::Default for crate::Renderer {
 }
 
 impl renderer::Headless for Renderer {
-    async fn new(
-        default_font: Font,
-        default_text_size: Pixels,
-        backend: Option<&str>,
-    ) -> Option<Self> {
+    async fn new(settings: renderer::Settings, backend: Option<&str>) -> Option<Self> {
         if backend.is_some_and(|backend| backend != "wgpu") {
             return None;
         }
 
-        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
-            backends: wgpu::Backends::from_env()
-                .unwrap_or(wgpu::Backends::PRIMARY),
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            backends: wgpu::Backends::from_env().unwrap_or(wgpu::Backends::PRIMARY),
             flags: wgpu::InstanceFlags::empty(),
-            ..wgpu::InstanceDescriptor::default()
+            ..wgpu::InstanceDescriptor::new_without_display_handle()
         });
 
         let adapter = instance
@@ -991,6 +913,7 @@ impl renderer::Headless for Renderer {
                 power_preference: wgpu::PowerPreference::HighPerformance,
                 force_fallback_adapter: false,
                 compatible_surface: None,
+                apply_limit_buckets: false,
             })
             .await
             .ok()?;
@@ -1023,7 +946,7 @@ impl renderer::Headless for Renderer {
             Shell::headless(),
         );
 
-        Some(Self::new(engine, default_font, default_text_size))
+        Some(Self::new(engine, settings))
     }
 
     fn name(&self) -> String {
@@ -1037,7 +960,13 @@ impl renderer::Headless for Renderer {
         background_color: Color,
     ) -> Vec<u8> {
         self.screenshot(
-            &Viewport::with_physical_size(size, scale_factor as f64),
+            &Viewport::with_physical_size(
+                size,
+                renderer::Scale {
+                    window: 1.0,
+                    application: scale_factor,
+                },
+            ),
             background_color,
         )
     }

@@ -1,7 +1,5 @@
-use iced::widget::{
-    button, column, lazy, pick_list, row, scrollable, space, text, text_input,
-};
-use iced::{Element, Fill};
+use iced::widget::{button, column, lazy, pick_list, row, scrollable, space, text, text_input};
+use iced::{Fill, Widget};
 
 use std::collections::HashSet;
 use std::hash::Hash;
@@ -153,17 +151,13 @@ impl App {
         }
     }
 
-    fn view(&self) -> Element<'_, Message> {
+    fn view(&self) -> impl Widget<Message> {
         let options = lazy(self.version, |_| {
             let mut items: Vec<_> = self.items.iter().cloned().collect();
 
             items.sort_by(|a, b| match self.order {
-                Order::Ascending => {
-                    a.name.to_lowercase().cmp(&b.name.to_lowercase())
-                }
-                Order::Descending => {
-                    b.name.to_lowercase().cmp(&a.name.to_lowercase())
-                }
+                Order::Ascending => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+                Order::Descending => b.name.to_lowercase().cmp(&a.name.to_lowercase()),
             });
 
             column(items.into_iter().map(|item| {
@@ -174,13 +168,11 @@ impl App {
                 row![
                     text(item.name.clone()).color(item.color),
                     space::horizontal(),
-                    pick_list(Color::ALL, Some(item.color), move |color| {
-                        Message::ItemColorChanged(item.clone(), color)
-                    }),
+                    pick_list(Some(item.color), Color::ALL, Color::to_string)
+                        .on_select(move |color| { Message::ItemColorChanged(item.clone(), color) }),
                     button
                 ]
                 .spacing(20)
-                .into()
             }))
             .spacing(10)
         });
@@ -191,14 +183,12 @@ impl App {
                 text_input("Add a new option", &self.input)
                     .on_input(Message::InputChanged)
                     .on_submit(Message::AddItem(self.input.clone())),
-                button(text!("Toggle Order ({})", self.order))
-                    .on_press(Message::ToggleOrder)
+                button(text!("Toggle Order ({})", self.order)).on_press(Message::ToggleOrder)
             ]
             .spacing(10)
         ]
         .spacing(20)
         .padding(20)
-        .into()
     }
 }
 

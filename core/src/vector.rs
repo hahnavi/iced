@@ -18,6 +18,20 @@ impl<T> Vector<T> {
 impl Vector {
     /// The zero [`Vector`].
     pub const ZERO: Self = Self::new(0.0, 0.0);
+
+    /// Rounds the [`Vector`].
+    pub fn round(self) -> Self {
+        Self {
+            x: self.x.round(),
+            y: self.y.round(),
+        }
+    }
+
+    /// Computes the logical [`Vector`] that ends up rounded
+    /// after the given `scale_factor` is applied to it.
+    pub fn hint(self, scale_factor: f32) -> Self {
+        (self * scale_factor).round() / scale_factor
+    }
 }
 
 impl<T> std::ops::Neg for Vector<T>

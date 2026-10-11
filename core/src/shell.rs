@@ -1,6 +1,12 @@
-use crate::InputMethod;
+//! Communicate with the iced runtime from widgets.
+use crate::clipboard;
 use crate::event;
 use crate::window;
+use crate::{Clipboard, InputMethod, Window};
+
+use std::rc::{self, Rc};
+use std::sync::Arc;
+use std::vec;
 
 /// A connection to the state of a shell.
 ///
@@ -10,36 +16,91 @@ use crate::window;
 /// [`Widget`]: crate::Widget
 #[derive(Debug)]
 pub struct Shell<'a, Message> {
-    messages: &'a mut Vec<Message>,
+    window: &'a dyn Window,
+    bus: &'a mut Bus<Message>,
+    waker: Waker,
     event_status: event::Status,
     redraw_request: window::RedrawRequest,
     input_method: InputMethod,
-    is_layout_invalid: bool,
-    are_widgets_invalid: bool,
+    invalidation: Invalidation,
+    clipboard: Clipboard,
+}
+
+/// The most severe invalidation requested by a [`Shell`] while
+/// processing an event.
+///
+/// Variants are ordered by severity and [`Shell::invalidate`]
+/// accumulates the maximum: a higher variant subsumes the lower ones.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Invalidation {
+    /// Nothing needs to be rebuilt.
+    None,
+    /// The application overlays need to be recreated.
+    Overlay,
+    /// The application layout needs to be recomputed, following the
+    /// given [`Diff`] strategy.
+    Layout(Diff),
+    /// The entire application widget tree needs to be rebuilt and
+    /// relaid out.
+    Widgets,
 }
 
 impl<'a, Message> Shell<'a, Message> {
     /// Creates a new [`Shell`] with the provided buffer of messages.
-    pub fn new(messages: &'a mut Vec<Message>) -> Self {
+    pub fn new(window: &'a dyn Window, waker: Waker, bus: &'a mut Bus<Message>) -> Self {
         Self {
-            messages,
+            window,
+            bus,
+            waker,
             event_status: event::Status::Ignored,
             redraw_request: window::RedrawRequest::Wait,
-            is_layout_invalid: false,
-            are_widgets_invalid: false,
+            invalidation: Invalidation::None,
             input_method: InputMethod::Disabled,
+            clipboard: Clipboard::new(),
         }
+    }
+
+    /// Creates a new [`Shell`] from the current one with the given list of local messages.
+    pub fn local<'b, A>(&self, bus: &'b mut Bus<A>) -> Shell<'b, A>
+    where
+        'a: 'b,
+    {
+        Shell::new(self.window, self.waker.clone(), bus)
+    }
+
+    /// Returns the [`Window`] of the [`Shell`].
+    pub fn window(&self) -> &'a dyn Window {
+        self.window
+    }
+
+    /// Returns the [`Waker`] of the [`Shell`].
+    pub fn waker(&self) -> &Waker {
+        &self.waker
     }
 
     /// Returns true if the [`Shell`] contains no published messages
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.messages.is_empty()
+        self.bus.messages.is_empty()
     }
 
     /// Publish the given `Message` for an application to process it.
     pub fn publish(&mut self, message: Message) {
-        self.messages.push(message);
+        let _ = self.publish_and_track(message);
+    }
+
+    /// Publish the given `Message` for an application to process it.
+    ///
+    /// The returned [`Tracking`] can be used to determine if the message
+    /// was processed.
+    pub fn publish_and_track(&mut self, message: Message) -> Tracking {
+        self.bus.push(message)
+    }
+
+    /// Forwards the given `Message` and fulfills the given [`Receipt`]
+    /// once processed.
+    pub fn forward(&mut self, message: Message, receipt: Receipt) {
+        self.bus.forward(message, receipt);
     }
 
     /// Marks the current event as captured. Prevents "event bubbling".
@@ -68,10 +129,7 @@ impl<'a, Message> Shell<'a, Message> {
     }
 
     /// Requests a new frame to be drawn at the given [`window::RedrawRequest`].
-    pub fn request_redraw_at(
-        &mut self,
-        redraw_request: impl Into<window::RedrawRequest>,
-    ) {
+    pub fn request_redraw_at(&mut self, redraw_request: impl Into<window::RedrawRequest>) {
         self.redraw_request = self.redraw_request.min(redraw_request.into());
     }
 
@@ -86,21 +144,52 @@ impl<'a, Message> Shell<'a, Message> {
     /// This is useful if you want to overwrite the redraw request to a previous value.
     /// Since it's a fairly advanced use case and should rarely be used, it is a static
     /// method.
-    pub fn replace_redraw_request(
-        shell: &mut Self,
-        redraw_request: window::RedrawRequest,
-    ) {
+    pub fn replace_redraw_request(shell: &mut Self, redraw_request: window::RedrawRequest) {
         shell.redraw_request = redraw_request;
+    }
+
+    /// Requests the runtime to read the clipboard contents expecting the given [`clipboard::Kind`].
+    ///
+    /// The runtime will produce a [`clipboard::Event::Read`] when the contents have been read.
+    pub fn read_clipboard(&mut self, kind: clipboard::Kind) {
+        self.clipboard.reads.push(kind);
+    }
+
+    /// Requests the runtime to write the given [`clipboard::Content`] to the clipboard.
+    ///
+    /// The runtime will produce a [`clipboard::Event::Written`] when the contents have been written.
+    pub fn write_clipboard(&mut self, content: impl Into<clipboard::Content>) {
+        self.clipboard.write = Some(content.into());
+    }
+
+    /// Returns the [`Clipboard`] requests of the [`Shell`], mutably.
+    pub fn clipboard_mut(&mut self) -> &mut Clipboard {
+        &mut self.clipboard
+    }
+
+    /// Starts a drag-and-drop operation from the current widget.
+    pub fn start_dnd(
+        &mut self,
+        internal: bool,
+        source: Option<clipboard::DndSource>,
+        icon: Option<clipboard::DynIconSurface>,
+        content: Box<dyn mime::AsMimeTypes + Send + 'static>,
+        actions: dnd::DndAction,
+    ) {
+        self.clipboard.dnd.push(clipboard::DndStart {
+            internal,
+            source,
+            icon,
+            content,
+            actions,
+        });
     }
 
     /// Requests the current [`InputMethod`] strategy.
     ///
     /// __Important__: This request will only be honored by the
     /// [`Shell`] only during a [`window::Event::RedrawRequested`].
-    pub fn request_input_method<T: AsRef<str>>(
-        &mut self,
-        ime: &InputMethod<T>,
-    ) {
+    pub fn request_input_method<T: AsRef<str>>(&mut self, ime: &InputMethod<T>) {
         self.input_method.merge(ime);
     }
 
@@ -116,58 +205,207 @@ impl<'a, Message> Shell<'a, Message> {
         &mut self.input_method
     }
 
-    /// Returns whether the current layout is invalid or not.
-    #[must_use]
-    pub fn is_layout_invalid(&self) -> bool {
-        self.is_layout_invalid
+    /// Invalidates the current application overlay.
+    ///
+    /// The shell will recreate the application overlays.
+    pub fn invalidate_overlay(&mut self) {
+        self.invalidate(Invalidation::Overlay);
     }
 
     /// Invalidates the current application layout.
     ///
     /// The shell will relayout the application widgets.
     pub fn invalidate_layout(&mut self) {
-        self.is_layout_invalid = true;
+        self.invalidate_layout_with(Diff::Skip);
     }
 
-    /// Triggers the given function if the layout is invalid, cleaning it in the
-    /// process.
-    pub fn revalidate_layout(&mut self, f: impl FnOnce()) {
-        if self.is_layout_invalid {
-            self.is_layout_invalid = false;
-
-            f();
-        }
-    }
-
-    /// Returns whether the widgets of the current application have been
-    /// invalidated.
-    #[must_use]
-    pub fn are_widgets_invalid(&self) -> bool {
-        self.are_widgets_invalid
+    /// Invalidates the current application layout with the following [`Diff`] strategy.
+    pub fn invalidate_layout_with(&mut self, diff: Diff) {
+        self.invalidate(Invalidation::Layout(diff));
     }
 
     /// Invalidates the current application widgets.
     ///
     /// The shell will rebuild and relayout the widget tree.
     pub fn invalidate_widgets(&mut self) {
-        self.are_widgets_invalid = true;
+        self.invalidate(Invalidation::Widgets);
+    }
+
+    /// Sets the [`Invalidation`] of the [`Shell`].
+    pub fn invalidate(&mut self, invalidation: Invalidation) {
+        self.invalidation = self.invalidation.max(invalidation);
+    }
+
+    /// Returns the [`Invalidation`] of the [`Shell`].
+    pub fn invalidation(&self) -> Invalidation {
+        self.invalidation
     }
 
     /// Merges the current [`Shell`] with another one by applying the given
     /// function to the messages of the latter.
     ///
     /// This method is useful for composition.
-    pub fn merge<B>(&mut self, other: Shell<'_, B>, f: impl Fn(B) -> Message) {
-        self.messages.extend(other.messages.drain(..).map(f));
+    pub fn merge<B>(&mut self, mut other: Shell<'_, B>, f: impl Fn(B) -> Message) {
+        self.bus.messages.extend(
+            other
+                .bus
+                .messages
+                .drain(..)
+                .map(|(message, receipt)| (f(message), receipt)),
+        );
 
-        self.is_layout_invalid =
-            self.is_layout_invalid || other.is_layout_invalid;
-
-        self.are_widgets_invalid =
-            self.are_widgets_invalid || other.are_widgets_invalid;
-
+        self.invalidation = self.invalidation.max(other.invalidation);
         self.redraw_request = self.redraw_request.min(other.redraw_request);
         self.event_status = self.event_status.merge(other.event_status);
+
         self.input_method.merge(&other.input_method);
+        self.clipboard.merge(&mut other.clipboard);
+    }
+}
+
+/// A waker can be used to wake up the iced runtime and, consequently, trigger
+/// wake events concurrently from widget logic.
+#[derive(Clone)]
+pub struct Waker {
+    wake: Arc<dyn Fn() + Send + Sync + 'static>,
+}
+
+impl Waker {
+    /// Creates a new [`Waker`] with the given `wake` function.
+    pub fn new(wake: impl Fn() + Send + Sync + 'static) -> Self {
+        Self {
+            wake: Arc::new(wake),
+        }
+    }
+
+    /// Creates a new [`Waker`] that does nothing.
+    pub fn noop() -> Self {
+        Self::new(|| {})
+    }
+
+    /// Wakes up the iced runtime as soon as possible.
+    ///
+    /// You normally want to call this concurrently (e.g. from a different thread).
+    pub fn wake(&self) {
+        (self.wake)();
+    }
+}
+
+impl std::fmt::Debug for Waker {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Waker").finish()
+    }
+}
+
+/// The diffing strategy to follow when invalidating some layout.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Diff {
+    /// Skips the diffing step.
+    Skip,
+    /// Performs diffing again before layouting.
+    Perform,
+}
+
+/// A channel of messages published by a [`Shell`].
+#[derive(Debug)]
+pub struct Bus<T> {
+    messages: Vec<(T, Receipt)>,
+}
+
+impl<T> Bus<T> {
+    /// Creates an empty [`Bus`].
+    pub fn new() -> Self {
+        Self {
+            messages: Vec::new(),
+        }
+    }
+
+    /// Returns `true` if the [`Bus`] has no messages pending.
+    pub fn is_empty(&self) -> bool {
+        self.messages.is_empty()
+    }
+
+    /// Returns the amount of messages pending in the [`Bus`].
+    pub fn len(&self) -> usize {
+        self.messages.len()
+    }
+
+    /// Pushes a new message to the [`Bus`].
+    ///
+    /// The returned [`Tracking`] can be used to determine if the message
+    /// was processed.
+    pub fn push(&mut self, message: T) -> Tracking {
+        let receipt = Receipt::new();
+        let tracking = receipt.tracking();
+
+        self.messages.push((message, receipt));
+
+        tracking
+    }
+
+    /// Forward a new message to the [`Bus`] with the given [`Receipt`].
+    pub fn forward(&mut self, message: T, receipt: Receipt) {
+        self.messages.push((message, receipt));
+    }
+
+    /// Drains the [`Bus`].
+    pub fn drain(&mut self) -> impl Iterator<Item = (T, Receipt)> {
+        self.messages.drain(..)
+    }
+}
+
+impl<T> Default for Bus<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<T> IntoIterator for Bus<T> {
+    type Item = T;
+    type IntoIter = IntoIter<T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        IntoIter {
+            iter: self.messages.into_iter(),
+        }
+    }
+}
+
+/// An iterator returned by the implementation of [`IntoIterator`] for [`Bus`].
+pub struct IntoIter<T> {
+    iter: vec::IntoIter<(T, Receipt)>,
+}
+
+impl<T> Iterator for IntoIter<T> {
+    type Item = T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        Some(self.iter.next()?.0)
+    }
+}
+
+/// Proof that a message has been received.
+#[derive(Debug)]
+pub struct Receipt(Rc<()>);
+
+impl Receipt {
+    fn new() -> Self {
+        Self(Rc::new(()))
+    }
+
+    fn tracking(&self) -> Tracking {
+        Tracking(Rc::downgrade(&self.0))
+    }
+}
+
+/// A message tracking returned by [`Shell::publish`].
+#[derive(Debug, Clone)]
+pub struct Tracking(rc::Weak<()>);
+
+impl Tracking {
+    /// Returns `true` if the message of this [`Tracking`] has been processed
+    /// by `update` logic.
+    pub fn is_processed(&self) -> bool {
+        self.0.strong_count() == 0
     }
 }

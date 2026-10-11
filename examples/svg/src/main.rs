@@ -1,5 +1,5 @@
 use iced::widget::{center, center_x, checkbox, column, svg};
-use iced::{Element, Fill, color};
+use iced::{Fill, Widget, color};
 
 pub fn main() -> iced::Result {
     iced::run(Tiger::update, Tiger::view)
@@ -24,25 +24,22 @@ impl Tiger {
         }
     }
 
-    fn view(&self) -> Element<'_, Message> {
-        let svg =
-            svg(concat!(env!("CARGO_MANIFEST_DIR"), "/resources/tiger.svg"))
-                .width(Fill)
-                .height(Fill)
-                .style(|_theme, _status| svg::Style {
-                    color: if self.apply_color_filter {
-                        Some(color!(0x0000ff))
-                    } else {
-                        None
-                    },
-                });
+    fn view(&self) -> impl Widget<Message> {
+        let svg = svg(concat!(env!("CARGO_MANIFEST_DIR"), "/resources/tiger.svg"))
+            .width(Fill)
+            .height(Fill)
+            .style(|_theme, _status| svg::Style {
+                color: if self.apply_color_filter {
+                    Some(color!(0x0000ff))
+                } else {
+                    None
+                },
+            });
 
         let apply_color_filter = checkbox(self.apply_color_filter)
             .label("Apply a color filter")
             .on_toggle(Message::ToggleColorFilter);
 
-        center(column![svg, center_x(apply_color_filter)].spacing(20))
-            .padding(20)
-            .into()
+        center(column![svg, center_x(apply_color_filter)].spacing(20)).padding(20)
     }
 }

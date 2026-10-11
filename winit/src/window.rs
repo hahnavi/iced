@@ -5,20 +5,20 @@ use winit::dpi::PhysicalPosition;
 
 pub use crate::core::window::{Event, Id, RedrawRequest, Settings};
 
+use crate::Proxy;
 use crate::conversion;
+use crate::core;
 use crate::core::alignment;
 use crate::core::input_method;
 use crate::core::mouse;
 use crate::core::renderer;
+use crate::core::shell;
 use crate::core::text;
 use crate::core::theme::{self, Base};
 use crate::core::time::Instant;
-use crate::core::{
-    Color, Element, InputMethod, Padding, Point, Rectangle, Size, Text, Vector,
-};
+use crate::core::{Color, InputMethod, Padding, Point, Rectangle, Size, Text, Vector};
 use crate::graphics::Compositor;
 use crate::program::{self, Program};
-use crate::runtime::window::raw_window_handle;
 
 use winit::dpi::{LogicalPosition, LogicalSize};
 use winit::monitor::MonitorHandle;
@@ -26,11 +26,7 @@ use winit::monitor::MonitorHandle;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-pub(crate) type ViewFn<M, T, R> = Arc<
-    Box<dyn Fn() -> Option<Element<'static, M, T, R>> + Send + Sync + 'static>,
->;
-
-pub struct WindowManager<P, C>
+pub struct Manager<P, C>
 where
     P: Program,
     C: Compositor<Renderer = P::Renderer>,
@@ -40,7 +36,10 @@ where
     entries: BTreeMap<Id, Window<P, C>>,
 }
 
-impl<P, C> WindowManager<P, C>
+/// Compatibility name for the window manager used by the current shell.
+pub type WindowManager<P, C> = Manager<P, C>;
+
+impl<P, C> Manager<P, C>
 where
     P: Program,
     C: Compositor<Renderer = P::Renderer>,
@@ -59,6 +58,8 @@ where
         window: Arc<dyn winit::window::Window>,
         program: &program::Instance<P>,
         compositor: &mut C,
+        proxy: Proxy<P::Message>,
+        renderer_settings: renderer::Settings,
         exit_on_close_request: bool,
         system_theme: theme::Mode,
         resize_border: u32,
@@ -66,12 +67,16 @@ where
         let state = State::new(program, id, system_theme, window.as_ref());
         let surface_size = state.physical_size();
         let surface_version = state.surface_version();
-        let surface = compositor.create_surface(
-            window.clone(),
-            surface_size.width,
-            surface_size.height,
-        );
-        let renderer = compositor.create_renderer();
+        let surface =
+            compositor.create_surface(window.clone(), surface_size.width, surface_size.height);
+        let renderer = compositor.create_renderer(renderer_settings);
+
+        let waker = shell::Waker::new(move || {
+            proxy.send_action(iced_runtime::Action::Event {
+                window: id,
+                event: core::Event::Waken,
+            });
+        });
 
         self.aliases.retain(|w, i| *w != window.id() && *i != id);
         let _ = self.aliases.insert(window.id(), id);
@@ -85,10 +90,12 @@ where
                     resize_border as f64 * window.scale_factor(),
                 ),
                 raw: window,
+                waker,
                 state,
                 exit_on_close_request,
                 surface,
                 surface_version,
+                surface_error_at: None,
                 renderer,
                 mouse_interaction: mouse::Interaction::None,
                 redraw_at: None,
@@ -127,9 +134,7 @@ where
         self.entries.first_key_value().map(|(_id, window)| window)
     }
 
-    pub fn iter_mut(
-        &mut self,
-    ) -> impl Iterator<Item = (Id, &mut Window<P, C>)> {
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = (Id, &mut Window<P, C>)> {
         self.entries.iter_mut().map(|(k, v)| (*k, v))
     }
 
@@ -164,9 +169,16 @@ where
 
         Some(window)
     }
+
+    pub fn replace_with(&mut self, mut f: impl FnMut(Window<P, C>) -> Window<P, C>) {
+        self.entries = std::mem::take(&mut self.entries)
+            .into_iter()
+            .map(|(id, window)| (id, f(window)))
+            .collect();
+    }
 }
 
-impl<P, C> Default for WindowManager<P, C>
+impl<P, C> Default for Manager<P, C>
 where
     P: Program,
     C: Compositor<Renderer = P::Renderer>,
@@ -184,6 +196,7 @@ where
     P::Theme: theme::Base,
 {
     pub raw: Arc<dyn winit::window::Window>,
+    pub waker: shell::Waker,
     pub state: State<P>,
     pub viewport_version: u64,
     pub drag_resize_window_func: Option<
@@ -200,6 +213,7 @@ where
     pub mouse_interaction: mouse::Interaction,
     pub surface: C::Surface,
     pub surface_version: u64,
+    pub surface_error_at: Option<Instant>,
     pub renderer: P::Renderer,
     pub redraw_at: Option<Instant>,
     preedit: Option<Preedit<P::Renderer>>,
@@ -218,9 +232,7 @@ where
         self.raw
             .outer_position()
             .ok()
-            .map(|position: PhysicalPosition<i32>| {
-                position.to_logical(self.raw.scale_factor())
-            })
+            .map(|position: PhysicalPosition<i32>| position.to_logical(self.raw.scale_factor()))
             .map(|position: LogicalPosition<f32>| Point {
                 x: position.x as f32,
                 y: position.y as f32,
@@ -264,21 +276,14 @@ where
                     if preedit.content.is_empty() {
                         self.preedit = None;
                     } else {
-                        let mut overlay =
-                            self.preedit.take().unwrap_or_else(Preedit::new);
+                        let mut overlay = self.preedit.take().unwrap_or_else(Preedit::new);
 
-                        let mut background_color =
-                            self.state.background_color();
+                        let mut background_color = self.state.background_color();
                         if background_color.a < 1.0 {
                             let style = self.state.theme().base();
                             background_color = style.background_color;
                         }
-                        overlay.update(
-                            cursor,
-                            &preedit,
-                            background_color,
-                            &self.renderer,
-                        );
+                        overlay.update(cursor, &preedit, background_color, &self.renderer);
 
                         self.preedit = Some(overlay);
                     }
@@ -316,21 +321,14 @@ where
             }
             preedit.draw(
                 &mut self.renderer,
-                text_color,
-                background_color,
-                &Rectangle::new(
-                    Point::ORIGIN,
-                    self.state.viewport().logical_size(),
-                ),
+                self.state.text_color(),
+                self.state.background_color(),
+                &Rectangle::new(Point::ORIGIN, self.state.viewport().logical_size()),
             );
         }
     }
 
-    fn enable_ime(
-        &mut self,
-        cursor: Rectangle,
-        purpose: input_method::Purpose,
-    ) {
+    fn enable_ime(&mut self, cursor: Rectangle, purpose: input_method::Purpose) {
         if self.ime_state.is_none() {
             self.raw.set_ime_allowed(true);
         }
@@ -356,43 +354,13 @@ where
     }
 }
 
-impl<P, C> raw_window_handle::HasWindowHandle for Window<P, C>
-where
-    P: Program,
-    C: Compositor<Renderer = P::Renderer>,
-{
-    fn window_handle(
-        &self,
-    ) -> Result<
-        raw_window_handle::WindowHandle<'_>,
-        raw_window_handle::HandleError,
-    > {
-        self.raw.window_handle()
-    }
-}
-
-impl<P, C> raw_window_handle::HasDisplayHandle for Window<P, C>
-where
-    P: Program,
-    C: Compositor<Renderer = P::Renderer>,
-{
-    fn display_handle(
-        &self,
-    ) -> Result<
-        raw_window_handle::DisplayHandle<'_>,
-        raw_window_handle::HandleError,
-    > {
-        self.raw.display_handle()
-    }
-}
-
 struct Preedit<Renderer>
 where
     Renderer: text::Renderer,
 {
     position: Point,
     content: Renderer::Paragraph,
-    spans: Vec<text::Span<'static, (), Renderer::Font>>,
+    spans: Vec<text::Span<'static, ()>>,
 }
 
 impl<Renderer> Preedit<Renderer>
@@ -443,16 +411,15 @@ where
             self.content = Renderer::Paragraph::with_spans(Text {
                 content: &spans,
                 bounds: Size::INFINITE,
-                size: preedit
-                    .text_size
-                    .unwrap_or_else(|| renderer.default_size()),
-                line_height: text::LineHeight::default(),
-                font: renderer.default_font(),
+                size: preedit.text_size.unwrap_or_else(|| renderer.text_size()),
+                line_height: renderer.line_height(),
+                font: renderer.font(),
                 align_x: text::Alignment::Default,
                 align_y: alignment::Vertical::Top,
                 shaping: text::Shaping::Advanced,
                 wrapping: text::Wrapping::None,
-                ellipsize: text::Ellipsize::default(),
+                ellipsis: text::Ellipsis::None,
+                hint_factor: renderer.hint_factor(),
             });
 
             self.spans.clear();
@@ -461,13 +428,7 @@ where
         }
     }
 
-    fn draw(
-        &self,
-        renderer: &mut Renderer,
-        color: Color,
-        background: Color,
-        viewport: &Rectangle,
-    ) {
+    fn draw(&self, renderer: &mut Renderer, color: Color, background: Color, viewport: &Rectangle) {
         use text::Paragraph as _;
 
         if self.content.min_width() < 1.0 {
@@ -503,12 +464,7 @@ where
                 background,
             );
 
-            renderer.fill_paragraph(
-                &self.content,
-                bounds.position(),
-                color,
-                bounds,
-            );
+            renderer.fill_paragraph(&self.content, bounds.position(), color, bounds);
 
             const UNDERLINE: f32 = 2.0;
 
@@ -526,8 +482,7 @@ where
             for span_bounds in self.content.span_bounds(1) {
                 renderer.fill_quad(
                     renderer::Quad {
-                        bounds: span_bounds
-                            + (bounds.position() - Point::ORIGIN),
+                        bounds: span_bounds + (bounds.position() - Point::ORIGIN),
                         ..Default::default()
                     },
                     color,

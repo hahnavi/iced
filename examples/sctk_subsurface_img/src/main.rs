@@ -1,8 +1,6 @@
 use cctk::sctk::reexports::client::protocol::wl_shm;
 use iced::{
-    platform_specific::shell::subsurface_widget::{
-        self, Shmbuf, SubsurfaceBuffer,
-    },
+    platform_specific::shell::subsurface_widget::{self, Shmbuf, SubsurfaceBuffer},
     window::{self, Id, Settings},
     Element, Subscription, Task,
 };
@@ -29,12 +27,13 @@ fn main() -> iced::Result {
     }
 
     iced::daemon(
-        SubsurfaceApp::title,
+        move || SubsurfaceApp::new(path.clone()),
         SubsurfaceApp::update,
         SubsurfaceApp::view,
     )
+    .title(SubsurfaceApp::title)
     .subscription(SubsurfaceApp::subscription)
-    .run_with(|| SubsurfaceApp::new(path))
+    .run()
 }
 
 #[derive(Debug, Clone)]
@@ -111,24 +110,19 @@ impl SubsurfaceApp {
                 .content_fit(iced::ContentFit::None)
                 .into()
         } else {
-            iced::widget::image::Image::new(&self.path)
-                .content_fit(iced::ContentFit::None)
-                .into()
+            Element::new(
+                iced::widget::image::Image::new(&self.path).content_fit(iced::ContentFit::None),
+            )
         };
-        iced::widget::scrollable(image).into()
+        Element::new(iced::widget::scrollable(image))
     }
 
     fn subscription(&self) -> Subscription<Message> {
         iced::event::listen_with(|evt, _status, _id| match evt {
             iced::Event::Keyboard(iced::keyboard::Event::KeyReleased {
-                key,
+                key: iced::keyboard::Key::Character(character),
                 ..
-            }) => match key {
-                iced::keyboard::Key::Character(
-                    " ".into()
-                ) => Some(Message::Toggle),
-                _ => None,
-            },
+            }) if character == " " => Some(Message::Toggle),
             _ => None,
         })
     }
@@ -144,9 +138,7 @@ fn create_memfile() -> rustix::io::Result<OwnedFd> {
             time.duration_since(UNIX_EPOCH).unwrap().subsec_nanos()
         );
 
-        match rustix::io::retry_on_intr(|| {
-            rustix::shm::shm_open(&name, flags, 0600.into())
-        }) {
+        match rustix::io::retry_on_intr(|| rustix::shm::shm_open(&name, flags, 0600.into())) {
             Ok(fd) => match rustix::shm::shm_unlink(&name) {
                 Ok(_) => return Ok(fd),
                 Err(errno) => {

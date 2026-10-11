@@ -1,34 +1,39 @@
 //! Draw and interact with text.
+
 pub mod editor;
 pub mod highlighter;
+pub mod input;
 pub mod paragraph;
+pub mod parser;
 
 pub use editor::Editor;
 pub use highlighter::Highlighter;
+pub use input::Input;
 pub use paragraph::Paragraph;
+pub use parser::Parser;
 
 use crate::alignment;
-use crate::{
-    Background, Border, Color, Padding, Pixels, Point, Rectangle, Size,
-};
+use crate::{Background, Border, Color, Font, Padding, Pixels, Point, Rectangle, Size};
 
 use std::borrow::Cow;
 use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicU32, Ordering};
 
-static TEXT_SCALE: AtomicU32 = AtomicU32::new(0x3f80_0000); // 1.0f32
+static TEXT_SCALE: AtomicU32 = AtomicU32::new(0x3f80_0000);
 
+/// Returns the global text scale applied by the renderer.
 pub fn text_scale() -> f32 {
     f32::from_bits(TEXT_SCALE.load(Ordering::Relaxed))
 }
 
+/// Sets the global text scale applied by the renderer.
 pub fn set_text_scale(scale: f32) {
     TEXT_SCALE.store(scale.to_bits(), Ordering::Relaxed);
 }
 
 /// A paragraph.
 #[derive(Debug, Clone, Copy)]
-pub struct Text<Content = String, Font = crate::Font> {
+pub struct Text<Content = String> {
     /// The content of the paragraph.
     pub content: Content,
 
@@ -41,7 +46,7 @@ pub struct Text<Content = String, Font = crate::Font> {
     /// The line height of the [`Text`].
     pub line_height: LineHeight,
 
-    /// The font of the [`Text`].
+    /// The [`Font`] of the [`Text`].
     pub font: Font,
 
     /// The horizontal alignment of the [`Text`].
@@ -56,17 +61,24 @@ pub struct Text<Content = String, Font = crate::Font> {
     /// The [`Wrapping`] strategy of the [`Text`].
     pub wrapping: Wrapping,
 
-    /// The  [`Ellipsize`] strategy of the [`Text`].
-    pub ellipsize: Ellipsize,
+    /// The [`Ellipsis`] strategy of the [`Text`].
+    pub ellipsis: Ellipsis,
+
+    /// The scale factor that may be used to internally scale the layout
+    /// calculation of the [`Paragraph`] and leverage metrics hinting.
+    ///
+    /// Effectively, this defines the "base" layout that will be used for
+    /// linear scaling.
+    ///
+    /// If `None`, hinting will be disabled and subpixel positioning will be
+    /// performed.
+    pub hint_factor: Option<f32>,
 }
 
-impl<Content, Font> Text<Content, Font>
-where
-    Font: Copy,
-{
+impl<Content> Text<Content> {
     /// Returns a new [`Text`] replacing only the content with the
     /// given value.
-    pub fn with_content<T>(&self, content: T) -> Text<T, Font> {
+    pub fn with_content<T>(&self, content: T) -> Text<T> {
         Text {
             content,
             bounds: self.bounds,
@@ -77,18 +89,15 @@ where
             align_y: self.align_y,
             shaping: self.shaping,
             wrapping: self.wrapping,
-            ellipsize: self.ellipsize,
+            ellipsis: self.ellipsis,
+            hint_factor: self.hint_factor,
         }
     }
 }
 
-impl<Content, Font> Text<Content, Font>
-where
-    Content: AsRef<str>,
-    Font: Copy,
-{
+impl<Content: AsRef<str>> Text<Content> {
     /// Returns a borrowed version of [`Text`].
-    pub fn as_ref(&self) -> Text<&str, Font> {
+    pub fn as_ref(&self) -> Text<&str> {
         self.with_content(self.content.as_ref())
     }
 }
@@ -207,29 +216,20 @@ pub enum Wrapping {
     WordOrGlyph,
 }
 
-/// The ellipsizing strategy of some text.
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
-pub enum Ellipsize {
-    /// No ellipsizing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+/// The ellipsis strategy of some text.
+pub enum Ellipsis {
+    /// No ellipsis.
     ///
     /// This is the default.
     #[default]
     None,
-    /// Ellipsize at the start of the text.
-    Start(EllipsizeHeightLimit),
-    /// Ellipsize in the middle of the text.
-    Middle(EllipsizeHeightLimit),
-    /// Ellipsize at the end of the text.
-    End(EllipsizeHeightLimit),
-}
-
-/// The ellipsizing strategy of some text when it exceeds a certain height.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum EllipsizeHeightLimit {
-    /// The number of lines after which ellipsizing should occur.
-    Lines(usize),
-    /// The height limit in pixels
-    Height(f32),
+    /// Ellipsize the start of the last visual line in the text.
+    Start,
+    /// Ellipsize the middle of the last visual line in the text.
+    Middle,
+    /// Ellipsize the end of the last visual line in the text.
+    End,
 }
 
 /// The height of a line of text in a paragraph.
@@ -244,9 +244,9 @@ pub enum LineHeight {
 
 impl LineHeight {
     /// Returns the [`LineHeight`] in absolute logical pixels.
-    pub fn to_absolute(self, text_size: Pixels) -> Pixels {
+    pub fn to_absolute(self, text_size: impl Into<Pixels>) -> Pixels {
         match self {
-            Self::Relative(factor) => Pixels(factor * text_size.0),
+            Self::Relative(factor) => Pixels(factor * text_size.into().0),
             Self::Absolute(pixels) => pixels,
         }
     }
@@ -254,7 +254,7 @@ impl LineHeight {
 
 impl Default for LineHeight {
     fn default() -> Self {
-        Self::Relative(1.4)
+        Self::Relative(1.375)
     }
 }
 
@@ -287,36 +287,11 @@ impl Hash for LineHeight {
 
 /// The result of hit testing on text.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Hit {
-    /// The point was within the bounds of the returned character index.
-    CharOffset(usize, Affinity),
-}
-
-impl Hit {
-    /// Computes the cursor position of the [`Hit`] .
-    pub fn cursor(self) -> usize {
-        match self {
-            Self::CharOffset(i, _) => i,
-        }
-    }
-
-    /// Returns the cursor [`Affinity`] of the [`Hit`].
-    pub fn affinity(&self) -> Affinity {
-        match self {
-            Self::CharOffset(_, a) => *a,
-        }
-    }
-}
-
-/// Cursor affinity for BiDi text. At the boundary between runs of different
-/// directions, the same byte index can map to different visual positions.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum Affinity {
-    /// Associate with the run before the cursor index.
-    #[default]
-    Before,
-    /// Associate with the run after the cursor index.
-    After,
+pub struct Hit {
+    /// The line of the hit.
+    pub line: usize,
+    /// The first byte index of the closest glyph.
+    pub index: usize,
 }
 
 /// The difference detected in some text.
@@ -348,20 +323,17 @@ pub enum Difference {
 
 /// A renderer capable of measuring and drawing [`Text`].
 pub trait Renderer: crate::Renderer {
-    /// The font type used.
-    type Font: Copy + PartialEq;
-
     /// The [`Paragraph`] of this [`Renderer`].
-    type Paragraph: Paragraph<Font = Self::Font> + 'static;
+    type Paragraph: Paragraph + 'static;
 
     /// The [`Editor`] of this [`Renderer`].
-    type Editor: Editor<Font = Self::Font> + 'static;
+    type Editor: Editor + 'static;
 
-    /// The Raw of this [`Renderer`].
-    type Raw;
+    /// The raw text representation of this [`Renderer`].
+    type Raw: 'static;
 
     /// The icon font of the backend.
-    const ICON_FONT: Self::Font;
+    const ICON_FONT: Font;
 
     /// The `char` representing a ✔ icon in the [`ICON_FONT`].
     ///
@@ -398,11 +370,20 @@ pub trait Renderer: crate::Renderer {
     /// ['ICON_FONT']: Self::ICON_FONT
     const ICED_LOGO: char;
 
-    /// Returns the default [`Self::Font`].
-    fn default_font(&self) -> Self::Font;
+    /// Returns the default [`Font`].
+    fn font(&self) -> Font {
+        self.settings().font
+    }
 
     /// Returns the default size of [`Text`].
-    fn default_size(&self) -> Pixels;
+    fn text_size(&self) -> Pixels {
+        self.settings().text_size
+    }
+
+    /// Returns the default line height of [`Text`].
+    fn line_height(&self) -> LineHeight {
+        self.settings().line_height
+    }
 
     /// Draws the given [`Paragraph`] at the given position and with the given
     /// [`Color`].
@@ -424,14 +405,14 @@ pub trait Renderer: crate::Renderer {
         clip_bounds: Rectangle,
     );
 
-    /// Draws the given Raw
+    /// Draws raw text content produced by this renderer.
     fn fill_raw(&mut self, raw: Self::Raw);
 
     /// Draws the given [`Text`] at the given position and with the given
     /// [`Color`].
     fn fill_text(
         &mut self,
-        text: Text<String, Self::Font>,
+        text: Text<String>,
         position: Point,
         color: Color,
         clip_bounds: Rectangle,
@@ -440,14 +421,14 @@ pub trait Renderer: crate::Renderer {
 
 /// A span of text.
 #[derive(Debug, Clone)]
-pub struct Span<'a, Link = (), Font = crate::Font> {
+pub struct Span<'a, Link = ()> {
     /// The [`Fragment`] of text.
     pub text: Fragment<'a>,
     /// The size of the [`Span`] in [`Pixels`].
     pub size: Option<Pixels>,
     /// The [`LineHeight`] of the [`Span`].
     pub line_height: Option<LineHeight>,
-    /// The font of the [`Span`].
+    /// The [`Font`] of the [`Span`].
     pub font: Option<Font>,
     /// The [`Color`] of the [`Span`].
     pub color: Option<Color>,
@@ -474,7 +455,7 @@ pub struct Highlight {
     pub border: Border,
 }
 
-impl<'a, Link, Font> Span<'a, Link, Font> {
+impl<'a, Link> Span<'a, Link> {
     /// Creates a new [`Span`] of text with the given text fragment.
     pub fn new(fragment: impl IntoFragment<'a>) -> Self {
         Self {
@@ -537,10 +518,7 @@ impl<'a, Link, Font> Span<'a, Link, Font> {
     }
 
     /// Sets the [`Background`] of the [`Span`], if any.
-    pub fn background_maybe(
-        mut self,
-        background: Option<impl Into<Background>>,
-    ) -> Self {
+    pub fn background_maybe(mut self, background: Option<impl Into<Background>>) -> Self {
         let Some(background) = background else {
             return self;
         };
@@ -611,7 +589,7 @@ impl<'a, Link, Font> Span<'a, Link, Font> {
     }
 
     /// Turns the [`Span`] into a static one.
-    pub fn to_static(self) -> Span<'static, Link, Font> {
+    pub fn to_static(self) -> Span<'static, Link> {
         Span {
             text: Cow::Owned(self.text.into_owned()),
             size: self.size,
@@ -627,7 +605,7 @@ impl<'a, Link, Font> Span<'a, Link, Font> {
     }
 }
 
-impl<Link, Font> Default for Span<'_, Link, Font> {
+impl<Link> Default for Span<'_, Link> {
     fn default() -> Self {
         Self {
             text: Cow::default(),
@@ -644,13 +622,13 @@ impl<Link, Font> Default for Span<'_, Link, Font> {
     }
 }
 
-impl<'a, Link, Font> From<&'a str> for Span<'a, Link, Font> {
+impl<'a, Link> From<&'a str> for Span<'a, Link> {
     fn from(value: &'a str) -> Self {
         Span::new(value)
     }
 }
 
-impl<Link, Font: PartialEq> PartialEq for Span<'_, Link, Font> {
+impl<Link> PartialEq for Span<'_, Link> {
     fn eq(&self, other: &Self) -> bool {
         self.text == other.text
             && self.size == other.size
@@ -658,6 +636,35 @@ impl<Link, Font: PartialEq> PartialEq for Span<'_, Link, Font> {
             && self.font == other.font
             && self.color == other.color
     }
+}
+
+/// A specific position in some [`Text`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Position {
+    /// The line of the [`Text`].
+    pub line: usize,
+
+    /// The first byte index of a character boundary in the line.
+    pub index: usize,
+}
+
+/// The granularity of a text selection.
+///
+/// The target determines how a selection is expanded around its
+/// starting position:
+///
+/// - [`Target::Character`] selects the individual characters between
+///   the given positions;
+/// - [`Target::Word`] expands the selection to the nearest whole words;
+/// - [`Target::Line`] expands the selection to the nearest whole lines.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Target {
+    /// Selects individual characters.
+    Character,
+    /// Selects whole words.
+    Word,
+    /// Selects whole lines.
+    Line,
 }
 
 /// A fragment of [`Text`].

@@ -1,11 +1,13 @@
 //! Run your application in a headless runtime.
 use crate::core;
+use crate::core::font;
 use crate::core::mouse;
 use crate::core::renderer;
+use crate::core::shell;
 use crate::core::time::Instant;
 use crate::core::widget;
 use crate::core::window;
-use crate::core::{Bytes, Element, Point, Size};
+use crate::core::{Bytes, Point, Size, Widget};
 use crate::instruction;
 use crate::program;
 use crate::program::Program;
@@ -20,6 +22,7 @@ use crate::runtime::user_interface;
 use crate::runtime::{Task, UserInterface};
 use crate::{Instruction, Selector};
 
+use std::borrow::Cow;
 use std::fmt;
 
 /// A headless runtime that can run iced applications and execute
@@ -39,7 +42,6 @@ pub struct Emulator<P: Program> {
     size: Size,
     window: core::window::Id,
     cursor: mouse::Cursor,
-    clipboard: Clipboard,
     cache: Option<user_interface::Cache>,
     pending_tasks: usize,
 }
@@ -68,12 +70,7 @@ impl<P: Program + 'static> Emulator<P> {
     /// The [`Emulator`] will send [`Event`] notifications through the provided [`mpsc::Sender`].
     ///
     /// When the [`Emulator`] has finished booting, an [`Event::Ready`] will be produced.
-    pub fn new(
-        sender: mpsc::Sender<Event<P>>,
-        program: &P,
-        mode: Mode,
-        size: Size,
-    ) -> Emulator<P> {
+    pub fn new(sender: mpsc::Sender<Event<P>>, program: &P, mode: Mode, size: Size) -> Emulator<P> {
         Self::with_preset(sender, program, mode, size, None)
     }
 
@@ -92,14 +89,19 @@ impl<P: Program + 'static> Emulator<P> {
 
         let settings = program.settings();
 
+        for font in &settings.fonts {
+            load_font(font.clone()).expect("Font must be valid");
+        }
+
         // TODO: Error handling
         let executor = P::Executor::new().expect("Create emulator executor");
 
+        let backend = std::env::var("ICED_TEST_BACKEND").ok();
+
         let renderer = executor
             .block_on(P::Renderer::new(
-                settings.default_font,
-                settings.default_text_size,
-                None,
+                renderer::Settings::from(&settings),
+                backend.as_deref(),
             ))
             .expect("Create emulator renderer");
 
@@ -119,7 +121,6 @@ impl<P: Program + 'static> Emulator<P> {
             renderer,
             mode,
             size,
-            clipboard: Clipboard { content: None },
             cursor: mouse::Cursor::Unavailable,
             window: core::window::Id::unique(),
             cache: Some(user_interface::Cache::default()),
@@ -179,9 +180,6 @@ impl<P: Program + 'static> Emulator<P> {
                 runtime::Action::Output(message) => {
                     self.update(program, message);
                 }
-                runtime::Action::LoadFont { .. } => {
-                    // TODO
-                }
                 runtime::Action::Widget(operation) => {
                     let mut user_interface = UserInterface::build(
                         program.view(&self.state, self.window),
@@ -219,40 +217,26 @@ impl<P: Program + 'static> Emulator<P> {
 
                             let _ = sender.send(self.window);
                         }
-                        window::Action::GetOldest(sender)
-                        | window::Action::GetLatest(sender) => {
+                        window::Action::GetOldest(sender) | window::Action::GetLatest(sender) => {
                             let _ = sender.send(Some(self.window));
                         }
-                        window::Action::GetSize(id, sender) => {
-                            if id == self.window {
-                                let _ = sender.send(self.size);
-                            }
+                        window::Action::GetSize(id, sender) if id == self.window => {
+                            let _ = sender.send(self.size);
                         }
-                        window::Action::GetMaximized(id, sender) => {
-                            if id == self.window {
-                                let _ = sender.send(false);
-                            }
+                        window::Action::GetMaximized(id, sender) if id == self.window => {
+                            let _ = sender.send(false);
                         }
-                        window::Action::GetMinimized(id, sender) => {
-                            if id == self.window {
-                                let _ = sender.send(None);
-                            }
+                        window::Action::GetMinimized(id, sender) if id == self.window => {
+                            let _ = sender.send(None);
                         }
-                        window::Action::GetPosition(id, sender) => {
-                            if id == self.window {
-                                let _ = sender.send(Some(Point::ORIGIN));
-                            }
+                        window::Action::GetPosition(id, sender) if id == self.window => {
+                            let _ = sender.send(Some(Point::ORIGIN));
                         }
-                        window::Action::GetScaleFactor(id, sender) => {
-                            if id == self.window {
-                                let _ = sender.send(1.0);
-                            }
+                        window::Action::GetScaleFactor(id, sender) if id == self.window => {
+                            let _ = sender.send(1.0);
                         }
-                        window::Action::GetMode(id, sender) => {
-                            if id == self.window {
-                                let _ =
-                                    sender.send(core::window::Mode::Windowed);
-                            }
+                        window::Action::GetMode(id, sender) if id == self.window => {
+                            let _ = sender.send(core::window::Mode::Windowed);
                         }
                         _ => {
                             // Ignored
@@ -263,9 +247,34 @@ impl<P: Program + 'static> Emulator<P> {
                     // TODO
                     dbg!(action);
                 }
-                iced_runtime::Action::Image(action) => {
+                runtime::Action::Font(action) => {
+                    use crate::runtime::font;
+
+                    match action {
+                        font::Action::Load { bytes, channel } => {
+                            let result = load_font(bytes);
+                            let _ = channel.send(result);
+                        }
+                        _ => {
+                            // TODO
+                            dbg!(action);
+                        }
+                    }
+                }
+                runtime::Action::Image(action) => {
                     // TODO
                     dbg!(action);
+                }
+                runtime::Action::Backend(action) => {
+                    // TODO
+                    dbg!(action);
+                }
+                runtime::Action::Event { window, event } => {
+                    // TODO
+                    dbg!(window, event);
+                }
+                runtime::Action::Tick => {
+                    // TODO
                 }
                 runtime::Action::Exit => {
                     // TODO
@@ -273,8 +282,7 @@ impl<P: Program + 'static> Emulator<P> {
                 runtime::Action::Reload => {
                     // TODO
                 }
-                runtime::Action::Dnd(_)
-                | runtime::Action::PlatformSpecific(_) => {
+                runtime::Action::Dnd(_) | runtime::Action::PlatformSpecific(_) => {
                     // Drag and drop and platform surfaces need a
                     // windowing system, which an emulator has none of.
                 }
@@ -288,7 +296,7 @@ impl<P: Program + 'static> Emulator<P> {
     /// produced by the [`Emulator`].
     ///
     /// Otherwise, an [`Event::Failed`] will be triggered.
-    pub fn run(&mut self, program: &P, instruction: Instruction) {
+    pub fn run(&mut self, program: &P, instruction: &Instruction) {
         let mut user_interface = UserInterface::build(
             program.view(&self.state, self.window),
             self.size,
@@ -296,12 +304,28 @@ impl<P: Program + 'static> Emulator<P> {
             &mut self.renderer,
         );
 
-        let mut messages = Vec::new();
+        let mut messages = shell::Bus::new();
 
-        match &instruction {
+        match instruction {
             Instruction::Interact(interaction) => {
                 let Some(events) = interaction.events(|target| match target {
-                    instruction::Target::Point(position) => Some(*position),
+                    instruction::Target::Id(id) => {
+                        use widget::Operation;
+
+                        let mut operation = Selector::find(widget::Id::from(id.to_owned()));
+
+                        user_interface.operate(
+                            &self.renderer,
+                            &mut widget::operation::black_box(&mut operation),
+                        );
+
+                        match operation.finish() {
+                            widget::operation::Outcome::Some(widget) => {
+                                Some(widget?.visible_bounds()?.center())
+                            }
+                            _ => None,
+                        }
+                    }
                     instruction::Target::Text(text) => {
                         use widget::Operation;
 
@@ -319,35 +343,36 @@ impl<P: Program + 'static> Emulator<P> {
                             _ => None,
                         }
                     }
+                    instruction::Target::Point(position) => Some(*position),
                 }) else {
-                    self.runtime.send(Event::Failed(instruction));
+                    self.runtime.send(Event::Failed(instruction.clone()));
                     self.cache = Some(user_interface.into_cache());
                     return;
                 };
 
                 for event in &events {
-                    if let core::Event::Mouse(mouse::Event::CursorMoved {
-                        position,
-                    }) = event
-                    {
+                    if let core::Event::Mouse(mouse::Event::CursorMoved { position }) = event {
                         self.cursor = mouse::Cursor::Available(*position);
                     }
                 }
 
                 let (_state, _status) = user_interface.update(
+                    &window::Headless,
+                    &shell::Waker::noop(),
                     &events,
                     self.cursor,
                     &mut self.renderer,
-                    &mut self.clipboard,
                     &mut messages,
                 );
 
                 self.cache = Some(user_interface.into_cache());
 
                 let task = self.runtime.enter(|| {
-                    Task::batch(messages.into_iter().map(|message| {
-                        program.update(&mut self.state, message)
-                    }))
+                    Task::batch(
+                        messages
+                            .into_iter()
+                            .map(|message| program.update(&mut self.state, message)),
+                    )
                 });
 
                 self.resubscribe(program);
@@ -369,7 +394,7 @@ impl<P: Program + 'static> Emulator<P> {
                             self.runtime.send(Event::Ready);
                         }
                         _ => {
-                            self.runtime.send(Event::Failed(instruction));
+                            self.runtime.send(Event::Failed(instruction.clone()));
                         }
                     }
 
@@ -426,18 +451,13 @@ impl<P: Program + 'static> Emulator<P> {
         self.runtime
             .track(subscription::into_recipes(self.runtime.enter(|| {
                 program.subscription(&self.state).map(|message| {
-                    Event::Action(Action(Action_::Runtime(
-                        runtime::Action::Output(message),
-                    )))
+                    Event::Action(Action(Action_::Runtime(runtime::Action::Output(message))))
                 })
             })));
     }
 
     /// Returns the current view of the [`Emulator`].
-    pub fn view(
-        &self,
-        program: &P,
-    ) -> Element<'_, P::Message, P::Theme, P::Renderer> {
+    pub fn view(&self, program: &P) -> impl Widget<P::Message, P::Theme, P::Renderer> + '_ {
         program.view(&self.state, self.window)
     }
 
@@ -466,13 +486,14 @@ impl<P: Program + 'static> Emulator<P> {
 
         // TODO: Nested redraws!
         let _ = user_interface.update(
+            &window::Headless,
+            &shell::Waker::noop(),
             &[core::Event::Window(window::Event::RedrawRequested(
                 Instant::now(),
             ))],
             mouse::Cursor::Unavailable,
             &mut self.renderer,
-            &mut self.clipboard,
-            &mut Vec::new(),
+            &mut shell::Bus::new(),
         );
 
         user_interface.draw(
@@ -486,22 +507,27 @@ impl<P: Program + 'static> Emulator<P> {
             mouse::Cursor::Unavailable,
         );
 
+        self.cache = Some(user_interface.into_cache());
+
         let physical_size = Size::new(
             (self.size.width * scale_factor).round() as u32,
             (self.size.height * scale_factor).round() as u32,
         );
 
-        let rgba = self.renderer.screenshot(
-            physical_size,
-            scale_factor,
-            style.background_color,
-        );
+        let rgba = self
+            .renderer
+            .screenshot(physical_size, scale_factor, style.background_color);
 
         window::Screenshot {
             rgba: Bytes::from(rgba),
             size: physical_size,
             scale_factor,
         }
+    }
+
+    /// Returns a reference to the state of the [`Emulator`].
+    pub fn state(&self) -> &P::State {
+        &self.state
     }
 
     /// Turns the [`Emulator`] into its internal state.
@@ -543,16 +569,11 @@ impl fmt::Display for Mode {
     }
 }
 
-struct Clipboard {
-    content: Option<String>,
-}
+fn load_font(font: Cow<'static, [u8]>) -> Result<(), font::Error> {
+    crate::renderer::graphics::text::font_system()
+        .write()
+        .expect("Write to font system")
+        .load_font(font);
 
-impl core::Clipboard for Clipboard {
-    fn read(&self, _kind: core::clipboard::Kind) -> Option<String> {
-        self.content.clone()
-    }
-
-    fn write(&mut self, _kind: core::clipboard::Kind, contents: String) {
-        self.content = Some(contents);
-    }
+    Ok(())
 }

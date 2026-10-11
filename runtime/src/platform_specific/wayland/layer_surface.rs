@@ -6,8 +6,8 @@ use cctk::sctk::{
 };
 use iced_core::layout::Limits;
 
-use iced_core::Rectangle;
 use iced_core::window::Id;
+use iced_core::{Rectangle, Size};
 
 /// output for layer surface
 #[derive(Debug, Clone)]
@@ -81,11 +81,7 @@ impl Default for SctkLayerSurfaceSettings {
             margin: Default::default(),
             size: Default::default(),
             exclusive_zone: Default::default(),
-            size_limits: Limits::NONE
-                .min_height(1.0)
-                .min_width(1.0)
-                .max_width(1920.0)
-                .max_height(1080.023),
+            size_limits: Limits::new(Size::new(1.0, 1.0), Size::new(1920.0, 1080.0)),
         }
     }
 }
@@ -137,6 +133,7 @@ pub enum Action {
         /// keyboard interactivity of the layer surface
         keyboard_interactivity: KeyboardInteractivity,
     },
+    /// Sets the accepted input region of the layer surface.
     InputZone {
         /// id of the layer surface
         id: Id,
@@ -157,9 +154,11 @@ pub enum Action {
         /// padding of the surface geometry
         padding: IcedMargin,
     },
+    /// Controls whether the layer surface is visible on the lock screen.
     ShowOnLock {
         /// id of the layer surface
         id: Id,
+        /// Whether the surface should be shown on the lock screen.
         value: bool,
     },
 }
@@ -177,11 +176,9 @@ impl fmt::Debug for Action {
                 "Action::LayerSurfaceAction::Size {{ id: {:#?}, width: {:?}, height: {:?} }}",
                 id, width, height
             ),
-            Action::Destroy(id) => write!(
-                f,
-                "Action::LayerSurfaceAction::Destroy {{ id: {:#?} }}",
-                id
-            ),
+            Action::Destroy(id) => {
+                write!(f, "Action::LayerSurfaceAction::Destroy {{ id: {:#?} }}", id)
+            }
             Action::Anchor { id, anchor } => write!(
                 f,
                 "Action::LayerSurfaceAction::Anchor {{ id: {:#?}, anchor: {:?} }}",

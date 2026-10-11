@@ -1,13 +1,8 @@
 use iced::keyboard;
-use iced::widget::{
-    button, center_y, column, container, image, row, text, text_input,
-};
+use iced::widget::{button, center_y, column, container, image, row, text, text_input};
 use iced::window;
 use iced::window::screenshot::{self, Screenshot};
-use iced::{
-    Center, ContentFit, Element, Fill, FillPortion, Rectangle, Subscription,
-    Task,
-};
+use iced::{Center, ContentFit, Fill, FillPortion, Rectangle, Subscription, Task, Widget};
 
 use ::image as img;
 use ::image::ColorType;
@@ -67,10 +62,7 @@ impl Example {
                 if let Some((screenshot, _handle)) = &self.screenshot {
                     self.png_saving = true;
 
-                    return Task::perform(
-                        save_to_png(screenshot.clone()),
-                        Message::PngSaved,
-                    );
+                    return Task::perform(save_to_png(screenshot.clone()), Message::PngSaved);
                 }
             }
             Message::PngSaved(res) => {
@@ -121,17 +113,16 @@ impl Example {
         Task::none()
     }
 
-    fn view(&self) -> Element<'_, Message> {
-        let image: Element<Message> =
-            if let Some((_screenshot, handle)) = &self.screenshot {
-                image(handle)
-                    .content_fit(ContentFit::Contain)
-                    .width(Fill)
-                    .height(Fill)
-                    .into()
-            } else {
-                text("Press the button to take a screenshot!").into()
-            };
+    fn view(&self) -> impl Widget<Message> {
+        let image = if let Some((_screenshot, handle)) = &self.screenshot {
+            image(handle)
+                .content_fit(ContentFit::Contain)
+                .width(Fill)
+                .height(Fill)
+                .boxed()
+        } else {
+            text("Press the button to take a screenshot!").boxed()
+        };
 
         let image = center_y(image)
             .height(FillPortion(2))
@@ -140,20 +131,18 @@ impl Example {
 
         let crop_origin_controls = row![
             text("X:").width(30),
-            numeric_input("0", self.x_input_value).map(Message::XInputChanged),
+            numeric_input(self.x_input_value).map(Message::XInputChanged),
             text("Y:").width(30),
-            numeric_input("0", self.y_input_value).map(Message::YInputChanged)
+            numeric_input(self.y_input_value).map(Message::YInputChanged)
         ]
         .spacing(10)
         .align_y(Center);
 
         let crop_dimension_controls = row![
             text("W:").width(30),
-            numeric_input("0", self.width_input_value)
-                .map(Message::WidthInputChanged),
+            numeric_input(self.width_input_value).map(Message::WidthInputChanged),
             text("H:").width(30),
-            numeric_input("0", self.height_input_value)
-                .map(Message::HeightInputChanged)
+            numeric_input(self.height_input_value).map(Message::HeightInputChanged)
         ]
         .spacing(10)
         .align_y(Center);
@@ -169,15 +158,15 @@ impl Example {
         .align_x(Center);
 
         let controls = {
-            let save_result =
-                self.saved_png_path.as_ref().map(
-                    |png_result| match png_result {
-                        Ok(path) => format!("Png saved as: {path:?}!"),
-                        Err(PngError(error)) => {
-                            format!("Png could not be saved due to:\n{error}")
-                        }
-                    },
-                );
+            let save_result = self
+                .saved_png_path
+                .as_ref()
+                .map(|png_result| match png_result {
+                    Ok(path) => format!("Png saved as: {path:?}!"),
+                    Err(PngError(error)) => {
+                        format!("Png could not be saved due to:\n{error}")
+                    }
+                });
 
             column![
                 column![
@@ -186,12 +175,10 @@ impl Example {
                         .width(Fill)
                         .on_press(Message::Screenshot),
                     if !self.png_saving {
-                        button(centered_text("Save as png")).on_press_maybe(
-                            self.screenshot.is_some().then(|| Message::Png),
-                        )
+                        button(centered_text("Save as png"))
+                            .on_press_maybe(self.screenshot.is_some().then(|| Message::Png))
                     } else {
-                        button(centered_text("Saving..."))
-                            .style(button::secondary)
+                        button(centered_text("Saving...")).style(button::secondary)
                     }
                     .style(button::secondary)
                     .padding([10, 20])
@@ -221,7 +208,7 @@ impl Example {
             .height(Fill)
             .align_y(Center);
 
-        container(content).padding(10).into()
+        container(content).padding(10)
     }
 
     fn subscription(&self) -> Subscription<Message> {
@@ -262,27 +249,20 @@ async fn save_to_png(screenshot: Screenshot) -> Result<String, PngError> {
 #[derive(Clone, Debug)]
 struct PngError(String);
 
-fn numeric_input(
-    placeholder: &str,
-    value: Option<u32>,
-) -> Element<'_, Option<u32>> {
-    text_input(
-        placeholder,
-        &value.as_ref().map(ToString::to_string).unwrap_or_default(),
-    )
-    .on_input(move |text| {
-        if text.is_empty() {
-            None
-        } else if let Ok(new_value) = text.parse() {
-            Some(new_value)
-        } else {
-            value
-        }
-    })
-    .width(40)
-    .into()
+fn numeric_input(value: Option<u32>) -> impl Widget<Option<u32>> {
+    text_input("0", value.unwrap_or_default())
+        .on_input(move |text| {
+            if text.is_empty() {
+                None
+            } else if let Ok(new_value) = text.parse() {
+                Some(new_value)
+            } else {
+                value
+            }
+        })
+        .width(40)
 }
 
-fn centered_text(content: &str) -> Element<'_, Message> {
-    text(content).width(Fill).align_x(Center).into()
+fn centered_text(content: &str) -> impl Widget<Message> {
+    text(content).width(Fill).align_x(Center)
 }

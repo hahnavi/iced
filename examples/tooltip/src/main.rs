@@ -1,4 +1,4 @@
-use iced::Element;
+use iced::Widget;
 use iced::alignment;
 use iced::time::seconds;
 use iced::widget::tooltip::Position;
@@ -40,10 +40,9 @@ impl Tooltip {
         }
     }
 
-    fn view(&self) -> Element<'_, Message> {
+    fn view(&self) -> impl Widget<Message> {
         let tooltip = tooltip(
-            button("Press to change position")
-                .on_press(Message::ChangePosition),
+            button("Press to change position").on_press(Message::ChangePosition),
             position_to_text(self.position),
             self.position,
         )
@@ -60,7 +59,6 @@ impl Tooltip {
                 .align_x(alignment::Horizontal::Center)
                 .spacing(10),
         )
-        .into()
     }
 }
 

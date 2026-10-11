@@ -2,17 +2,17 @@
 //!
 //! # Example
 //! ```no_run
-//! # mod iced { pub mod widget { pub use iced_widget::*; } }
+//! # mod iced { pub mod widget { pub use iced_widget::*; } pub use iced_widget::Renderer; pub use iced_widget::core::*; }
+//! # use iced::widget::Widget;
 //! # pub type State = ();
-//! # pub type Element<'a, Message> = iced_widget::core::Element<'a, Message, iced_widget::Theme, iced_widget::Renderer>;
 //! use iced::widget::svg;
 //!
 //! enum Message {
 //!     // ...
 //! }
 //!
-//! fn view(state: &State) -> Element<'_, Message> {
-//!     svg("tiger.svg").into()
+//! fn view(state: &State) -> impl Widget<Message> {
+//!     svg("tiger.svg")
 //! }
 //! ```
 //! Display vector graphics in your application.
@@ -22,11 +22,11 @@ use crate::core::layout;
 use crate::core::mouse;
 use crate::core::renderer;
 use crate::core::svg;
-use crate::core::widget::Tree;
+use crate::core::widget::{Meta, Tree};
 use crate::core::window;
 use crate::core::{
-    Clipboard, Color, ContentFit, Element, Event, Layout, Length, Point,
-    Rectangle, Rotation, Shell, Size, Theme, Vector, Widget,
+    Color, ContentFit, Event, Layout, Length, Point, Rectangle, Rotation, Shell, Size, Theme,
+    Vector, Widget,
 };
 
 #[cfg(feature = "a11y")]
@@ -45,17 +45,17 @@ pub use crate::core::svg::Handle;
 ///
 /// # Example
 /// ```no_run
-/// # mod iced { pub mod widget { pub use iced_widget::*; } }
+/// # mod iced { pub mod widget { pub use iced_widget::*; } pub use iced_widget::Renderer; pub use iced_widget::core::*; }
+/// # use iced::widget::Widget;
 /// # pub type State = ();
-/// # pub type Element<'a, Message> = iced_widget::core::Element<'a, Message, iced_widget::Theme, iced_widget::Renderer>;
 /// use iced::widget::svg;
 ///
 /// enum Message {
 ///     // ...
 /// }
 ///
-/// fn view(state: &State) -> Element<'_, Message> {
-///     svg("tiger.svg").into()
+/// fn view(state: &State) -> impl Widget<Message> {
+///     svg("tiger.svg")
 /// }
 /// ```
 pub struct Svg<'a, Theme = crate::Theme>
@@ -96,7 +96,7 @@ where
             label: None,
             handle: handle.into(),
             width: Length::Fill,
-            height: Length::Shrink,
+            height: Length::Fit,
             content_fit: ContentFit::Contain,
             class: Theme::default(),
             rotation: Rotation::default(),
@@ -187,10 +187,7 @@ where
 
     #[cfg(feature = "a11y")]
     /// Sets the description of the [`Svg`].
-    pub fn description_widget<T: iced_accessibility::Describes>(
-        mut self,
-        description: &T,
-    ) -> Self {
+    pub fn description_widget<T: iced_accessibility::Describes>(mut self, description: &T) -> Self {
         self.description = Some(iced_accessibility::Description::Id(
             description.description(),
         ));
@@ -200,22 +197,21 @@ where
     #[cfg(feature = "a11y")]
     /// Sets the description of the [`Svg`].
     pub fn description(mut self, description: impl Into<Cow<'a, str>>) -> Self {
-        self.description =
-            Some(iced_accessibility::Description::Text(description.into()));
+        self.description = Some(iced_accessibility::Description::Text(description.into()));
         self
     }
 
     #[cfg(feature = "a11y")]
     /// Sets the label of the [`Svg`].
     pub fn label(mut self, label: &dyn iced_accessibility::Labels) -> Self {
-        self.label =
-            Some(label.label().into_iter().map(|l| l.into()).collect());
+        self.label = Some(label.label().into_iter().map(|l| l.into()).collect());
         self
     }
 }
 
-impl<Message, Theme, Renderer> Widget<Message, Theme, Renderer>
-    for Svg<'_, Theme>
+impl<Theme> Meta for Svg<'_, Theme> where Theme: Catalog {}
+
+impl<Message, Theme, Renderer> Widget<Message, Theme, Renderer> for Svg<'_, Theme>
 where
     Renderer: svg::Renderer,
     Theme: Catalog,
@@ -227,12 +223,7 @@ where
         }
     }
 
-    fn layout(
-        &mut self,
-        _tree: &mut Tree,
-        renderer: &Renderer,
-        limits: &layout::Limits,
-    ) -> layout::Node {
+    fn layout(&mut self, tree: &mut Tree, renderer: &Renderer, limits: &layout::Limits) {
         // The raw w/h of the underlying image
         let Size { width, height } = renderer.measure_svg(&self.handle);
         let image_size = Size::new(width as f32, height as f32);
@@ -249,26 +240,25 @@ where
         // Shrink the widget to fit the resized image, if requested
         let final_size = Size {
             width: match self.width {
-                Length::Shrink => f32::min(raw_size.width, full_size.width),
+                Length::Fit | Length::Shrink => f32::min(raw_size.width, full_size.width),
                 _ => raw_size.width,
             },
             height: match self.height {
-                Length::Shrink => f32::min(raw_size.height, full_size.height),
+                Length::Fit | Length::Shrink => f32::min(raw_size.height, full_size.height),
                 _ => raw_size.height,
             },
         };
 
-        layout::Node::new(final_size)
+        tree.size = final_size;
     }
 
     fn update(
         &mut self,
         _state: &mut Tree,
         event: &Event,
-        layout: Layout<'_>,
+        layout: Layout,
         cursor: mouse::Cursor,
         _renderer: &Renderer,
-        _clipboard: &mut dyn Clipboard,
         shell: &mut Shell<'_, Message>,
         _viewport: &Rectangle,
     ) {
@@ -291,8 +281,8 @@ where
         renderer: &mut Renderer,
         theme: &Theme,
         renderer_style: &renderer::Style,
-        layout: Layout<'_>,
-        cursor: mouse::Cursor,
+        layout: Layout,
+        _cursor: mouse::Cursor,
         _viewport: &Rectangle,
     ) {
         let Size { width, height } = renderer.measure_svg(&self.handle);
@@ -321,14 +311,7 @@ where
 
         let drawing_bounds = Rectangle::new(position, final_size);
 
-        let is_mouse_over = cursor.is_over(bounds);
-        let status = if is_mouse_over {
-            Status::Hovered
-        } else {
-            Status::Idle
-        };
-
-        let mut style = theme.style(&self.class, self.status.unwrap_or(status));
+        let mut style = theme.style(&self.class, self.status.unwrap_or(Status::Idle));
 
         if self.symbolic && style.color.is_none() {
             style.color = Some(renderer_style.icon_color);
@@ -348,9 +331,7 @@ where
             );
         };
 
-        if adjusted_fit.width > bounds.width
-            || adjusted_fit.height > bounds.height
-        {
+        if adjusted_fit.width > bounds.width || adjusted_fit.height > bounds.height {
             renderer.with_layer(bounds, render);
         } else {
             render(renderer);
@@ -360,7 +341,7 @@ where
     #[cfg(feature = "a11y")]
     fn a11y_nodes(
         &self,
-        layout: Layout<'_>,
+        layout: Layout,
         _state: &Tree,
         _cursor: mouse::Cursor,
     ) -> iced_accessibility::A11yTree {
@@ -376,12 +357,7 @@ where
             width,
             height,
         } = bounds;
-        let bounds = Rect::new(
-            x as f64,
-            y as f64,
-            (x + width) as f64,
-            (y + height) as f64,
-        );
+        let bounds = Rect::new(x as f64, y as f64, (x + width) as f64, (y + height) as f64);
         let mut node = Node::new(Role::Image);
         node.set_bounds(bounds);
         if let Some(name) = self.name.as_ref() {
@@ -415,17 +391,6 @@ where
 
     fn set_id(&mut self, id: Id) {
         self.id = id;
-    }
-}
-
-impl<'a, Message, Theme, Renderer> From<Svg<'a, Theme>>
-    for Element<'a, Message, Theme, Renderer>
-where
-    Theme: Catalog + 'a,
-    Renderer: svg::Renderer + 'a,
-{
-    fn from(icon: Svg<'a, Theme>) -> Element<'a, Message, Theme, Renderer> {
-        Element::new(icon)
     }
 }
 

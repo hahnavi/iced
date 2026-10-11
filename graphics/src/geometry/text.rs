@@ -1,6 +1,6 @@
 use crate::core;
 use crate::core::alignment;
-use crate::core::text::{Alignment, LineHeight, Paragraph, Shaping, Wrapping};
+use crate::core::text::{Alignment, Ellipsis, LineHeight, Paragraph, Shaping, Wrapping};
 use crate::core::{Color, Font, Pixels, Point, Size, Vector};
 use crate::geometry::Path;
 use crate::text;
@@ -40,6 +40,10 @@ pub struct Text {
     pub align_y: alignment::Vertical,
     /// The shaping strategy of the text.
     pub shaping: Shaping,
+    /// The wrapping strategy of the text.
+    pub wrapping: Wrapping,
+    /// The ellipsis strategy of the text.
+    pub ellipsis: Ellipsis,
 }
 
 impl Text {
@@ -56,61 +60,28 @@ impl Text {
             align_y: self.align_y,
             shaping: self.shaping,
             wrapping: Wrapping::default(),
-            ellipsize: core::text::Ellipsize::None,
+            ellipsis: Ellipsis::default(),
+            hint_factor: None,
         });
 
-        let mut buffer = cosmic_text::BufferLine::new(
-            &self.content,
-            cosmic_text::LineEnding::default(),
-            cosmic_text::AttrsList::new(&text::to_attributes(self.font)),
-            text::to_shaping(self.shaping, &self.content),
-        );
-
-        let mut font_system = text::font_system().write().unwrap();
-        let layout = buffer.layout(
-            font_system.raw(),
-            self.size.0,
-            None,
-            cosmic_text::Wrap::None,
-            cosmic_text::Ellipsize::None,
-            None,
-            8,
-            cosmic_text::Hinting::Disabled,
-        );
-
         let translation_x = match self.align_x {
-            Alignment::Left | Alignment::Default | Alignment::Justified => {
-                self.position.x
-            }
-            Alignment::Center | Alignment::Right => {
-                let mut line_width = 0.0f32;
-
-                for line in layout.iter() {
-                    line_width = line_width.max(line.w);
-                }
-
-                if self.align_x == Alignment::Center {
-                    self.position.x - line_width / 2.0
-                } else {
-                    self.position.x - line_width
-                }
-            }
+            Alignment::Default | Alignment::Left | Alignment::Justified => self.position.x,
+            Alignment::Center => self.position.x - paragraph.min_width() / 2.0,
+            Alignment::Right => self.position.x - paragraph.min_width(),
         };
 
         let translation_y = {
             match self.align_y {
                 alignment::Vertical::Top => self.position.y,
-                alignment::Vertical::Center => {
-                    self.position.y - paragraph.min_height() / 2.0
-                }
-                alignment::Vertical::Bottom => {
-                    self.position.y - paragraph.min_height()
-                }
+                alignment::Vertical::Center => self.position.y - paragraph.min_height() / 2.0,
+                alignment::Vertical::Bottom => self.position.y - paragraph.min_height(),
             }
         };
 
         let buffer = paragraph.buffer();
         let mut swash_cache = cosmic_text::SwashCache::new();
+
+        let mut font_system = text::font_system().write().expect("Write font system");
 
         for run in buffer.layout_runs() {
             for glyph in run.glyphs.iter() {
@@ -120,38 +91,30 @@ impl Text {
                 let start_y = translation_y + glyph.y_offset + run.line_y;
                 let offset = Vector::new(start_x, start_y);
 
-                if let Some(commands) = swash_cache.get_outline_commands(
-                    font_system.raw(),
-                    physical_glyph.cache_key,
-                ) {
+                if let Some(commands) =
+                    swash_cache.get_outline_commands(font_system.raw(), physical_glyph.cache_key)
+                {
                     let glyph = Path::new(|path| {
                         use cosmic_text::Command;
 
                         for command in commands {
                             match command {
                                 Command::MoveTo(p) => {
-                                    path.move_to(
-                                        Point::new(p.x, -p.y) + offset,
-                                    );
+                                    path.move_to(Point::new(p.x, -p.y) + offset);
                                 }
                                 Command::LineTo(p) => {
-                                    path.line_to(
-                                        Point::new(p.x, -p.y) + offset,
-                                    );
+                                    path.line_to(Point::new(p.x, -p.y) + offset);
                                 }
                                 Command::CurveTo(control_a, control_b, to) => {
                                     path.bezier_curve_to(
-                                        Point::new(control_a.x, -control_a.y)
-                                            + offset,
-                                        Point::new(control_b.x, -control_b.y)
-                                            + offset,
+                                        Point::new(control_a.x, -control_a.y) + offset,
+                                        Point::new(control_b.x, -control_b.y) + offset,
                                         Point::new(to.x, -to.y) + offset,
                                     );
                                 }
                                 Command::QuadTo(control, to) => {
                                     path.quadratic_curve_to(
-                                        Point::new(control.x, -control.y)
-                                            + offset,
+                                        Point::new(control.x, -control.y) + offset,
                                         Point::new(to.x, -to.y) + offset,
                                     );
                                 }
@@ -199,12 +162,14 @@ impl Default for Text {
             position: Point::ORIGIN,
             max_width: f32::INFINITY,
             color: Color::BLACK,
-            size: Pixels(14.0),
-            line_height: LineHeight::default(),
+            size: Pixels(16.0),
+            line_height: LineHeight::Relative(1.2),
             font: Font::default(),
             align_x: Alignment::Default,
             align_y: alignment::Vertical::Top,
-            shaping: Shaping::Advanced,
+            shaping: Shaping::default(),
+            wrapping: Wrapping::default(),
+            ellipsis: Ellipsis::default(),
         }
     }
 }

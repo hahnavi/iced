@@ -14,7 +14,7 @@ impl Transformation {
     /// Creates an orthographic projection.
     #[rustfmt::skip]
     pub fn orthographic(width: u32, height: u32) -> Self{
-        Self(Mat4::orthographic_rh_gl(
+        Self(glam::camera::rh::proj::opengl::orthographic(
             0.0, width as f32,
             height as f32, 0.0,
             -1.0, 1.0
@@ -89,12 +89,9 @@ impl Mul<Transformation> for Size {
     type Output = Self;
 
     fn mul(self, transformation: Transformation) -> Self {
-        let new_size = transformation.0.mul_vec4(Vec4::new(
-            self.width,
-            self.height,
-            1.0,
-            0.0,
-        ));
+        let new_size = transformation
+            .0
+            .mul_vec4(Vec4::new(self.width, self.height, 1.0, 0.0));
 
         Size::new(new_size.x, new_size.y)
     }

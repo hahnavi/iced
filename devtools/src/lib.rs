@@ -15,7 +15,10 @@ use crate::core::theme::{self, Theme};
 use crate::core::time::seconds;
 use crate::core::window;
 use crate::core::{
-    Alignment::Center, Color, Element, Font, Length::Fill, Settings,
+    Alignment::Center,
+    Color, Font,
+    Length::{Fill, Fit},
+    Settings, Widget,
 };
 use crate::futures::Subscription;
 use crate::program::Program;
@@ -23,8 +26,8 @@ use crate::program::message;
 use crate::runtime::task::{self, Task};
 use crate::time_machine::TimeMachine;
 use crate::widget::{
-    bottom_right, button, center, column, container, opaque, row, scrollable,
-    space, stack, text, themer,
+    Widget as _, bottom_right, button, center, column, container, opaque, row, scrollable, space,
+    stack, text, themer,
 };
 
 use std::fmt;
@@ -47,23 +50,27 @@ where
     P::Message: std::fmt::Debug + message::MaybeClone,
 {
     type State = DevTools<P>;
-    type Message = Event<P>;
+    type Message = Event<P::Message>;
     type Theme = P::Theme;
     type Renderer = P::Renderer;
     type Executor = P::Executor;
 
+    #[inline]
     fn name() -> &'static str {
         P::name()
     }
 
+    #[inline]
     fn settings(&self) -> Settings {
         self.program.settings()
     }
 
+    #[inline]
     fn window(&self) -> Option<window::Settings> {
         self.program.window()
     }
 
+    #[inline]
     fn boot(&self) -> (Self::State, Task<Self::Message>) {
         let (state, boot) = self.program.boot();
         let (devtools, task) = DevTools::new(state);
@@ -74,42 +81,41 @@ where
         )
     }
 
-    fn update(
-        &self,
-        state: &mut Self::State,
-        message: Self::Message,
-    ) -> Task<Self::Message> {
+    #[inline]
+    fn update(&self, state: &mut Self::State, message: Self::Message) -> Task<Self::Message> {
         state.update(&self.program, message)
     }
 
+    #[inline]
     fn view<'a>(
         &self,
         state: &'a Self::State,
         window: window::Id,
-    ) -> Element<'a, Self::Message, Self::Theme, Self::Renderer> {
+    ) -> impl Widget<Self::Message, Self::Theme, Self::Renderer> + 'a {
         state.view(&self.program, window)
     }
 
+    #[inline]
     fn title(&self, state: &Self::State, window: window::Id) -> String {
         state.title(&self.program, window)
     }
 
+    #[inline]
     fn subscription(&self, state: &Self::State) -> Subscription<Self::Message> {
         state.subscription(&self.program)
     }
 
-    fn theme(
-        &self,
-        state: &Self::State,
-        window: window::Id,
-    ) -> Option<Self::Theme> {
+    #[inline]
+    fn theme(&self, state: &Self::State, window: window::Id) -> Option<Self::Theme> {
         state.theme(&self.program, window)
     }
 
+    #[inline]
     fn style(&self, state: &Self::State, theme: &Self::Theme) -> theme::Style {
         state.style(&self.program, theme)
     }
 
+    #[inline]
     fn scale_factor(&self, state: &Self::State, window: window::Id) -> f64 {
         state.scale_factor(&self.program, window)
     }
@@ -176,7 +182,7 @@ where
         program.title(&self.state, window)
     }
 
-    pub fn update(&mut self, program: &P, event: Event<P>) -> Task<Event<P>> {
+    pub fn update(&mut self, program: &P, event: Event<P::Message>) -> Task<Event<P::Message>> {
         match event {
             Event::Message(message) => match message {
                 Message::HideNotification => {
@@ -220,16 +226,14 @@ where
                     Task::none()
                 }
                 Message::InstallComet => {
-                    self.mode =
-                        Mode::Setup(Setup::Running { logs: Vec::new() });
+                    self.mode = Mode::Setup(Setup::Running { logs: Vec::new() });
 
                     comet::install()
                         .map(Message::Installing)
                         .map(Event::Message)
                 }
                 Message::Installing(Ok(installation)) => {
-                    let Mode::Setup(Setup::Running { logs }) = &mut self.mode
-                    else {
+                    let Mode::Setup(Setup::Running { logs }) = &mut self.mode else {
                         return Task::none();
                     };
 
@@ -245,8 +249,7 @@ where
                     }
                 }
                 Message::Installing(Err(error)) => {
-                    let Mode::Setup(Setup::Running { logs }) = &mut self.mode
-                    else {
+                    let Mode::Setup(Setup::Running { logs }) = &mut self.mode else {
                         return Task::none();
                     };
 
@@ -305,44 +308,43 @@ where
         &self,
         program: &P,
         window: window::Id,
-    ) -> Element<'_, Event<P>, P::Theme, P::Renderer> {
+    ) -> impl Widget<Event<P::Message>, P::Theme, P::Renderer> + '_ {
         let state = self.state();
 
         let view = {
             let view = program.view(state, window);
 
-            if self.time_machine.is_rewinding() {
-                view.map(|_| Event::Discard)
-            } else {
-                view.map(Event::Program)
-            }
+            view.map(|message| {
+                if self.time_machine.is_rewinding() {
+                    Event::Discard
+                } else {
+                    Event::Program(message)
+                }
+            })
         };
 
         let theme = || {
             program
                 .theme(state, window)
                 .as_ref()
-                .and_then(theme::Base::palette)
-                .map(|palette| Theme::custom("iced devtools", palette))
+                .and_then(theme::Base::seed)
+                .map(|seed| Theme::custom("iced devtools", seed))
         };
 
         let setup = if let Mode::Setup(setup) = &self.mode {
-            let stage: Element<'_, _, Theme, P::Renderer> = match setup {
-                Setup::Idle { goal } => self::setup(goal),
-                Setup::Running { logs } => installation(logs),
+            let stage = match setup {
+                Setup::Idle { goal } => self::setup(goal).boxed(),
+                Setup::Running { logs } => installation(logs).boxed(),
             };
 
             let setup = center(
                 container(stage)
                     .padding(20)
-                    .max_width(500)
+                    .width(Fit.max(500))
                     .style(container::bordered_box),
             )
             .padding(10)
-            .style(|_theme| {
-                container::Style::default()
-                    .background(Color::BLACK.scale_alpha(0.8))
-            });
+            .style(|_theme| container::Style::default().background(Color::BLACK.scale_alpha(0.8)));
 
             Some(themer(theme(), opaque(setup).map(Event::Message)))
         } else {
@@ -353,39 +355,29 @@ where
             .show_notification
             .then(|| text("Press F12 to open debug metrics"))
             .or_else(|| {
-                debug::is_stale().then(|| {
-                    text(
-                        "Types have changed. Restart to re-enable hotpatching.",
-                    )
-                })
+                debug::is_stale()
+                    .then(|| text("Types have changed. Restart to re-enable hotpatching."))
             })
             .map(|notification| {
                 themer(
                     theme(),
                     bottom_right(opaque(
-                        container(notification)
-                            .padding(10)
-                            .style(container::dark),
+                        container(notification).padding(10).style(container::dark),
                     )),
                 )
             });
 
-        stack![view, setup, notification]
-            .width(Fill)
-            .height(Fill)
-            .into()
+        stack![view, setup, notification].width(Fill).height(Fill)
     }
 
-    pub fn subscription(&self, program: &P) -> Subscription<Event<P>> {
-        let subscription =
-            program.subscription(&self.state).map(Event::Program);
+    pub fn subscription(&self, program: &P) -> Subscription<Event<P::Message>> {
+        let subscription = program.subscription(&self.state).map(Event::Program);
         debug::subscriptions_tracked(subscription.units());
 
         let hotkeys = futures::keyboard::listen()
             .filter_map(|event| match event {
                 keyboard::Event::KeyPressed {
-                    modified_key:
-                        keyboard::Key::Named(keyboard::key::Named::F12),
+                    modified_key: keyboard::Key::Named(keyboard::key::Named::F12),
                     ..
                 } => Some(Message::ToggleComet),
                 _ => None,
@@ -414,20 +406,16 @@ where
     }
 }
 
-pub enum Event<P>
-where
-    P: Program,
-{
+pub enum Event<T> {
     Message(Message),
-    Program(P::Message),
+    Program(T),
     Command(debug::Command),
     Discard,
 }
 
-impl<P> fmt::Debug for Event<P>
+impl<T> fmt::Debug for Event<T>
 where
-    P: Program,
-    P::Message: std::fmt::Debug,
+    T: std::fmt::Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -439,7 +427,7 @@ where
     }
 }
 
-fn setup<Renderer>(goal: &Goal) -> Element<'_, Message, Theme, Renderer>
+fn setup<Renderer>(goal: &Goal) -> impl Widget<Message, Theme, Renderer>
 where
     Renderer: program::Renderer + 'static,
 {
@@ -476,7 +464,7 @@ where
     .padding(5)
     .style(container::dark);
 
-    Element::from(match goal {
+    match goal {
         Goal::Installation => column![
             text("comet is not installed!").size(20),
             "In order to display performance \
@@ -524,12 +512,10 @@ where
             ]
             .spacing(20)
         }
-    })
+    }
 }
 
-fn installation<'a, Renderer>(
-    logs: &'a [String],
-) -> Element<'a, Message, Theme, Renderer>
+fn installation<'a, Renderer>(logs: &'a [String]) -> impl Widget<Message, Theme, Renderer> + 'a
 where
     Renderer: program::Renderer + 'a,
 {
@@ -537,9 +523,10 @@ where
         text("Installing comet...").size(20),
         container(
             scrollable(
-                column(logs.iter().map(|log| {
-                    text(log).size(12).font(Font::MONOSPACE).into()
-                }))
+                column(
+                    logs.iter()
+                        .map(|log| text(log).size(12).font(Font::MONOSPACE))
+                )
                 .spacing(3),
             )
             .spacing(10)
@@ -551,12 +538,11 @@ where
         .style(container::dark)
     ]
     .spacing(20)
-    .into()
 }
 
 fn inline_code<'a, Renderer>(
     code: impl text::IntoFragment<'a>,
-) -> Element<'a, Message, Theme, Renderer>
+) -> impl Widget<Message, Theme, Renderer> + 'a
 where
     Renderer: program::Renderer + 'a,
 {
@@ -567,5 +553,4 @@ where
                 .border(border::rounded(2))
         })
         .padding([2, 4])
-        .into()
 }

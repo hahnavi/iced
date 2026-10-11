@@ -50,6 +50,7 @@ pub trait Selector {
         FindAll::new(find::All::new(self))
     }
 
+    /// Associates the current search with the window being processed.
     fn set_window_id(&mut self, _id: window::Id) {}
 }
 

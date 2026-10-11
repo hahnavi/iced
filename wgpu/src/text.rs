@@ -1,10 +1,11 @@
 use crate::core::alignment;
 use crate::core::text::Alignment;
-use crate::core::{Rectangle, Size, Transformation};
+use crate::core::{Rectangle, Size, Transformation, Vector};
 use crate::graphics::cache;
 use crate::graphics::color;
 use crate::graphics::text::cache::{self as text_cache, Cache as BufferCache};
 use crate::graphics::text::{Editor, Paragraph, font_system, to_color};
+use crate::nudge;
 
 use rustc_hash::FxHashMap;
 use std::collections::hash_map;
@@ -162,8 +163,7 @@ impl Storage {
                     }
 
                     // Only trim if glyphs have changed
-                    group.should_trim =
-                        group.should_trim || upload.version != cache.version;
+                    group.should_trim = group.should_trim || upload.version != cache.version;
 
                     upload.text = Arc::downgrade(&cache.text);
                     upload.version = cache.version;
@@ -279,15 +279,10 @@ pub struct Pipeline {
 }
 
 impl Pipeline {
-    pub fn new(
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        format: wgpu::TextureFormat,
-    ) -> Self {
+    pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, format: wgpu::TextureFormat) -> Self {
         let cache = cryoglyph::Cache::new(device);
-        let atlas = cryoglyph::TextAtlas::with_color_mode(
-            device, queue, &cache, format, COLOR_MODE,
-        );
+        let atlas =
+            cryoglyph::TextAtlas::with_color_mode(device, queue, &cache, format, COLOR_MODE);
 
         Pipeline {
             format,
@@ -332,8 +327,7 @@ impl State {
 
     pub fn prewarm(&mut self, pipeline: &Pipeline, device: &wgpu::Device) {
         if self.renderers.is_empty() {
-            let mut atlas =
-                pipeline.atlas.write().expect("Write to text atlas");
+            let mut atlas = pipeline.atlas.write().expect("Write to text atlas");
 
             self.renderers.push(cryoglyph::TextRenderer::new(
                 &mut atlas,
@@ -431,12 +425,7 @@ impl State {
         let atlas = pipeline.atlas.read().expect("Read text atlas");
         let mut layer_count = 0;
 
-        render_pass.set_scissor_rect(
-            bounds.x,
-            bounds.y,
-            bounds.width,
-            bounds.height,
-        );
+        render_pass.set_scissor_rect(bounds.x, bounds.y, bounds.width, bounds.height);
 
         for item in batch {
             match item {
@@ -497,12 +486,8 @@ fn prepare(
     let allocations: Vec<_> = sections
         .iter()
         .map(|section| match section {
-            Text::Paragraph { paragraph, .. } => {
-                paragraph.upgrade().map(Allocation::Paragraph)
-            }
-            Text::Editor { editor, .. } => {
-                editor.upgrade().map(Allocation::Editor)
-            }
+            Text::Paragraph { paragraph, .. } => paragraph.upgrade().map(Allocation::Paragraph),
+            Text::Editor { editor, .. } => editor.upgrade().map(Allocation::Editor),
             Text::Cached {
                 content,
                 bounds,
@@ -510,6 +495,8 @@ fn prepare(
                 line_height,
                 font,
                 shaping,
+                wrapping,
+                ellipsis,
                 align_x,
                 ..
             } => {
@@ -526,6 +513,8 @@ fn prepare(
                             height: bounds.height,
                         },
                         shaping: *shaping,
+                        wrapping: *wrapping,
+                        ellipsis: *ellipsis,
                     },
                 );
 
@@ -535,137 +524,152 @@ fn prepare(
         })
         .collect();
 
-    let text_areas = sections.iter().zip(allocations.iter()).filter_map(
-        |(section, allocation)| {
-            let (buffer, position, color, clip_bounds, transformation) =
-                match section {
-                    Text::Paragraph {
+    let text_areas = sections
+        .iter()
+        .zip(allocations.iter())
+        .filter_map(|(section, allocation)| {
+            let (buffer, hint_factor, position, color, clip_bounds, transformation) = match section
+            {
+                Text::Paragraph {
+                    position,
+                    color,
+                    clip_bounds,
+                    transformation,
+                    ..
+                } => {
+                    use crate::core::text::Paragraph as _;
+
+                    let Some(Allocation::Paragraph(paragraph)) = allocation else {
+                        return None;
+                    };
+
+                    (
+                        paragraph.buffer(),
+                        paragraph.hint_factor(),
+                        *position,
+                        *color,
+                        *clip_bounds,
+                        *transformation,
+                    )
+                }
+                Text::Editor {
+                    position,
+                    color,
+                    clip_bounds,
+                    transformation,
+                    ..
+                } => {
+                    use crate::core::text::Editor as _;
+
+                    let Some(Allocation::Editor(editor)) = allocation else {
+                        return None;
+                    };
+
+                    (
+                        editor.buffer(),
+                        editor.hint_factor(),
+                        *position,
+                        *color,
+                        *clip_bounds,
+                        *transformation,
+                    )
+                }
+                Text::Cached {
+                    bounds,
+                    align_x,
+                    align_y,
+                    color,
+                    clip_bounds,
+                    ..
+                } => {
+                    let Some(Allocation::Cache(key)) = allocation else {
+                        return None;
+                    };
+
+                    let entry = buffer_cache.get(key).expect("Get cached buffer");
+
+                    let mut position = bounds.position();
+
+                    position.x = match align_x {
+                        Alignment::Default | Alignment::Left | Alignment::Justified => position.x,
+                        Alignment::Center => position.x - entry.min_bounds.width / 2.0,
+                        Alignment::Right => position.x - entry.min_bounds.width,
+                    };
+
+                    position.y = match align_y {
+                        alignment::Vertical::Top => position.y,
+                        alignment::Vertical::Center => position.y - entry.min_bounds.height / 2.0,
+                        alignment::Vertical::Bottom => position.y - entry.min_bounds.height,
+                    };
+
+                    (
+                        &entry.buffer,
+                        None,
                         position,
-                        color,
-                        clip_bounds,
-                        transformation,
-                        ..
-                    } => {
-                        let Some(Allocation::Paragraph(paragraph)) = allocation
-                        else {
-                            return None;
-                        };
+                        *color,
+                        *clip_bounds,
+                        Transformation::IDENTITY,
+                    )
+                }
+                Text::Raw {
+                    raw,
+                    transformation,
+                } => {
+                    let Some(Allocation::Raw(buffer)) = allocation else {
+                        return None;
+                    };
 
-                        (
-                            paragraph.buffer(),
-                            *position,
-                            *color,
-                            *clip_bounds,
-                            *transformation,
-                        )
-                    }
-                    Text::Editor {
-                        position,
-                        color,
-                        clip_bounds,
-                        transformation,
-                        ..
-                    } => {
-                        let Some(Allocation::Editor(editor)) = allocation
-                        else {
-                            return None;
-                        };
+                    (
+                        buffer.as_ref(),
+                        None,
+                        raw.position,
+                        raw.color,
+                        raw.clip_bounds,
+                        *transformation,
+                    )
+                }
+            };
 
-                        (
-                            editor.buffer(),
-                            *position,
-                            *color,
-                            *clip_bounds,
-                            *transformation,
-                        )
-                    }
-                    Text::Cached {
-                        bounds,
-                        align_x,
-                        align_y,
-                        color,
-                        clip_bounds,
-                        ..
-                    } => {
-                        let Some(Allocation::Cache(key)) = allocation else {
-                            return None;
-                        };
+            let clip_bounds = layer_bounds
+                .intersection(&(clip_bounds * transformation * layer_transformation))
+                .and_then(nudge::snap)?;
 
-                        let entry =
-                            buffer_cache.get(key).expect("Get cached buffer");
+            let translation = Vector::new(-buffer.scroll().horizontal, 0.0);
 
-                        let mut position = bounds.position();
+            let mut position = (position + translation) * transformation * layer_transformation;
+            let mut scale = transformation.scale_factor() * layer_transformation.scale_factor();
 
-                        position.x = match align_x {
-                            Alignment::Default
-                            | Alignment::Left
-                            | Alignment::Justified => position.x,
-                            Alignment::Center => {
-                                position.x - entry.min_bounds.width / 2.0
-                            }
-                            Alignment::Right => {
-                                position.x - entry.min_bounds.width
-                            }
-                        };
+            if let Some(hint_factor) = hint_factor {
+                let font_size = (buffer.metrics().font_size / hint_factor).round() as u32;
 
-                        position.y = match align_y {
-                            alignment::Vertical::Top => position.y,
-                            alignment::Vertical::Center => {
-                                position.y - entry.min_bounds.height / 2.0
-                            }
-                            alignment::Vertical::Bottom => {
-                                position.y - entry.min_bounds.height
-                            }
-                        };
+                position.x = position.x.round()
+                    // This is a hack! Empirically and cluelessly derived
+                    // It tries to nudge hinted text to improve rasterization
+                    + if font_size.is_multiple_of(2) {
+                        0.25
+                    } else if font_size.is_multiple_of(5) {
+                        -0.45 // Deliberately avoid 0.5 to circumvent erratic rounding due to floating precision errors
+                    } else {
+                        -0.25
+                    };
 
-                        (
-                            &entry.buffer,
-                            position,
-                            *color,
-                            *clip_bounds,
-                            Transformation::IDENTITY,
-                        )
-                    }
-                    Text::Raw {
-                        raw,
-                        transformation,
-                    } => {
-                        let Some(Allocation::Raw(buffer)) = allocation else {
-                            return None;
-                        };
-
-                        (
-                            buffer.as_ref(),
-                            raw.position,
-                            raw.color,
-                            raw.clip_bounds,
-                            *transformation,
-                        )
-                    }
-                };
-
-            let position = position * transformation * layer_transformation;
-
-            let clip_bounds = layer_bounds.intersection(
-                &(clip_bounds * transformation * layer_transformation),
-            )?;
+                scale /= hint_factor;
+            }
 
             Some(cryoglyph::TextArea {
                 text: buffer.layout_runs(),
                 left: position.x,
                 top: position.y,
-                scale: transformation.scale_factor()
-                    * layer_transformation.scale_factor(),
+                scale,
                 bounds: cryoglyph::TextBounds {
-                    left: clip_bounds.x.round() as i32,
-                    top: clip_bounds.y.round() as i32,
-                    right: (clip_bounds.x + clip_bounds.width).round() as i32,
-                    bottom: (clip_bounds.y + clip_bounds.height).round() as i32,
+                    left: clip_bounds.x as i32,
+                    top: clip_bounds.y as i32,
+                    right: (clip_bounds.x + clip_bounds.width) as i32,
+                    bottom: (clip_bounds.y + clip_bounds.height) as i32,
                 },
                 default_color: to_color(color),
             })
-        },
-    );
+        });
 
     renderer.prepare(
         device,

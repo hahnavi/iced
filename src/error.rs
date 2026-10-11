@@ -1,6 +1,5 @@
+use crate::backend;
 use crate::futures;
-use crate::graphics;
-#[cfg(feature = "winit")]
 use crate::shell;
 
 /// An error that occurred while running an application.
@@ -16,28 +15,18 @@ pub enum Error {
 
     /// The application graphics context could not be created.
     #[error("the application graphics context could not be created")]
-    GraphicsCreationFailed(graphics::Error),
-
-    /// There was an event loop error.
-    #[error("there was an event loop error")]
-    EventLoop(Box<dyn std::error::Error + Send + Sync>),
+    GraphicsCreationFailed(backend::Error),
 }
 
-#[cfg(feature = "winit")]
 impl From<shell::Error> for Error {
     fn from(error: shell::Error) -> Error {
         match error {
-            shell::Error::ExecutorCreationFailed(error) => {
-                Error::ExecutorCreationFailed(error)
-            }
-            #[cfg(feature = "winit")]
+            shell::Error::ExecutorCreationFailed(error) => Error::ExecutorCreationFailed(error),
             shell::Error::WindowCreationFailed(error) => {
                 Error::WindowCreationFailed(Box::new(error))
             }
-            shell::Error::GraphicsCreationFailed(error) => {
-                Error::GraphicsCreationFailed(error)
-            }
-            shell::Error::EventLoop(error) => Error::EventLoop(Box::new(error)),
+            shell::Error::EventLoop(error) => Error::WindowCreationFailed(Box::new(error)),
+            shell::Error::GraphicsCreationFailed(error) => Error::GraphicsCreationFailed(error),
         }
     }
 }

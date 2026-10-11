@@ -8,9 +8,10 @@ use iced::{
 };
 
 fn main() -> iced::Result {
-    iced::daemon(Locker::title, Locker::update, Locker::view)
+    iced::daemon(Locker::new, Locker::update, Locker::view)
+        .title(Locker::title)
         .subscription(Locker::subscription)
-        .run_with(Locker::new)
+        .run()
 }
 
 #[derive(Debug, Clone, Default)]
@@ -44,10 +45,7 @@ impl Locker {
             Message::WaylandEvent(evt) => match evt {
                 WaylandEvent::Output(evt, output) => match evt {
                     OutputEvent::Created(_) => {
-                        return session_lock::get_lock_surface(
-                            window::Id::unique(),
-                            output,
-                        );
+                        return session_lock::get_lock_surface(window::Id::unique(), output);
                     }
                     OutputEvent::Removed => {}
                     _ => {}
@@ -55,9 +53,7 @@ impl Locker {
                 WaylandEvent::SessionLock(evt) => match evt {
                     SessionLockEvent::Locked => {
                         return iced::Task::perform(
-                            async_std::task::sleep(
-                                std::time::Duration::from_secs(5),
-                            ),
+                            async_std::task::sleep(std::time::Duration::from_secs(5)),
                             |_| Message::TimeUp,
                         );
                     }
@@ -78,14 +74,12 @@ impl Locker {
     }
 
     fn view(&self, id: window::Id) -> Element<Message> {
-        text(format!("Lock Surface {:?}", id)).into()
+        Element::new(text(format!("Lock Surface {:?}", id)))
     }
 
     fn subscription(&self) -> Subscription<Message> {
         listen_raw(|evt, _, _| {
-            if let iced::Event::PlatformSpecific(
-                iced::event::PlatformSpecific::Wayland(evt),
-            ) = evt
+            if let iced::Event::PlatformSpecific(iced::event::PlatformSpecific::Wayland(evt)) = evt
             {
                 Some(Message::WaylandEvent(evt))
             } else {

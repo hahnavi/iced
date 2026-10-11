@@ -6,11 +6,10 @@ use crate::core::mouse;
 use crate::core::overlay;
 use crate::core::renderer;
 use crate::core::theme;
-use crate::core::widget::Operation;
 use crate::core::widget::tree::{self, Tree};
+use crate::core::widget::{Meta, Operation};
 use crate::core::{
-    Background, Clipboard, Color, Element, Event, Layout, Length, Rectangle,
-    Shell, Size, Vector, Widget,
+    Background, Color, Element, Event, Layout, Length, Rectangle, Shell, Size, Vector, Widget,
 };
 
 /// A widget that applies any `Theme` to its contents.
@@ -33,12 +32,9 @@ where
 {
     /// Creates an empty [`Themer`] that applies the given `Theme`
     /// to the provided `content`.
-    pub fn new(
-        theme: Option<Theme>,
-        content: impl Into<Element<'a, Message, Theme, Renderer>>,
-    ) -> Self {
+    pub fn new(theme: Option<Theme>, content: impl Widget<Message, Theme, Renderer> + 'a) -> Self {
         Self {
-            content: content.into(),
+            content: content._boxed(),
             theme,
             text_color: None,
             background: None,
@@ -58,6 +54,11 @@ where
     }
 }
 
+impl<Message, Theme, Renderer> Meta for Themer<'_, Message, Theme, Renderer> where
+    Renderer: crate::core::Renderer
+{
+}
+
 impl<Message, Theme, Renderer, AnyTheme> Widget<Message, AnyTheme, Renderer>
     for Themer<'_, Message, Theme, Renderer>
 where
@@ -66,72 +67,60 @@ where
     Renderer: crate::core::Renderer,
 {
     fn tag(&self) -> tree::Tag {
-        self.content.as_widget().tag()
+        self.content.tag()
     }
 
     fn state(&self) -> tree::State {
-        self.content.as_widget().state()
-    }
-
-    fn children(&self) -> Vec<Tree> {
-        self.content.as_widget().children()
+        self.content.state()
     }
 
     fn diff(&mut self, tree: &mut Tree) {
-        self.content.as_widget_mut().diff(tree);
+        self.content.diff(tree);
     }
 
     fn size(&self) -> Size<Length> {
-        self.content.as_widget().size()
+        self.content.size()
     }
 
-    fn layout(
-        &mut self,
-        tree: &mut Tree,
-        renderer: &Renderer,
-        limits: &layout::Limits,
-    ) -> layout::Node {
-        self.content.as_widget_mut().layout(tree, renderer, limits)
+    fn layout(&mut self, tree: &mut Tree, renderer: &Renderer, limits: &layout::Limits) {
+        self.content.layout(tree, renderer, limits);
     }
 
     fn operate(
         &mut self,
         tree: &mut Tree,
-        layout: Layout<'_>,
+        layout: Layout,
+        viewport: &Rectangle,
         renderer: &Renderer,
         operation: &mut dyn Operation,
     ) {
         self.content
-            .as_widget_mut()
-            .operate(tree, layout, renderer, operation);
+            .operate(tree, layout, viewport, renderer, operation);
     }
 
     fn update(
         &mut self,
         tree: &mut Tree,
         event: &Event,
-        layout: Layout<'_>,
+        layout: Layout,
         cursor: mouse::Cursor,
         renderer: &Renderer,
-        clipboard: &mut dyn Clipboard,
         shell: &mut Shell<'_, Message>,
         viewport: &Rectangle,
     ) {
-        self.content.as_widget_mut().update(
-            tree, event, layout, cursor, renderer, clipboard, shell, viewport,
-        );
+        self.content
+            .update(tree, event, layout, cursor, renderer, shell, viewport);
     }
 
     fn mouse_interaction(
         &self,
         tree: &Tree,
-        layout: Layout<'_>,
+        layout: Layout,
         cursor: mouse::Cursor,
         viewport: &Rectangle,
         renderer: &Renderer,
     ) -> mouse::Interaction {
         self.content
-            .as_widget()
             .mouse_interaction(tree, layout, cursor, viewport, renderer)
     }
 
@@ -141,7 +130,7 @@ where
         renderer: &mut Renderer,
         theme: &AnyTheme,
         style: &renderer::Style,
-        layout: Layout<'_>,
+        layout: Layout,
         cursor: mouse::Cursor,
         viewport: &Rectangle,
     ) {
@@ -170,45 +159,35 @@ where
         };
 
         self.content
-            .as_widget()
             .draw(tree, renderer, theme, &style, layout, cursor, viewport);
     }
 
     fn overlay<'b>(
         &'b mut self,
         tree: &'b mut Tree,
-        layout: Layout<'b>,
+        layout: Layout,
         renderer: &Renderer,
         viewport: &Rectangle,
         translation: Vector,
-    ) -> Option<overlay::Element<'b, Message, AnyTheme, Renderer>> {
+        window: Size,
+    ) -> Vec<overlay::Element<'b, Message, AnyTheme, Renderer>> {
         struct Overlay<'a, Message, Theme, Renderer> {
             theme: &'a Option<Theme>,
             content: overlay::Element<'a, Message, Theme, Renderer>,
         }
 
-        impl<Message, Theme, Renderer, AnyTheme>
-            overlay::Overlay<Message, AnyTheme, Renderer>
+        impl<Message, Theme, Renderer, AnyTheme> overlay::Overlay<Message, AnyTheme, Renderer>
             for Overlay<'_, Message, Theme, Renderer>
         where
             Theme: theme::Base,
             AnyTheme: theme::Base,
             Renderer: crate::core::Renderer,
         {
-            fn layout(
-                &mut self,
-                renderer: &Renderer,
-                bounds: Size,
-            ) -> layout::Node {
-                self.content.as_overlay_mut().layout(renderer, bounds)
-            }
-
             fn draw(
                 &self,
                 renderer: &mut Renderer,
                 theme: &AnyTheme,
                 style: &renderer::Style,
-                layout: Layout<'_>,
                 cursor: mouse::Cursor,
             ) {
                 let default_theme = theme::Base::default(theme.mode());
@@ -216,102 +195,63 @@ where
 
                 self.content
                     .as_overlay()
-                    .draw(renderer, theme, style, layout, cursor);
+                    .draw(renderer, theme, style, cursor);
             }
 
             fn update(
                 &mut self,
                 event: &Event,
-                layout: Layout<'_>,
                 cursor: mouse::Cursor,
                 renderer: &Renderer,
-                clipboard: &mut dyn Clipboard,
                 shell: &mut Shell<'_, Message>,
             ) {
                 self.content
                     .as_overlay_mut()
-                    .update(event, layout, cursor, renderer, clipboard, shell);
+                    .update(event, cursor, renderer, shell);
             }
 
-            fn operate(
-                &mut self,
-                layout: Layout<'_>,
-                renderer: &Renderer,
-                operation: &mut dyn Operation,
-            ) {
-                self.content
-                    .as_overlay_mut()
-                    .operate(layout, renderer, operation);
+            fn operate(&mut self, renderer: &Renderer, operation: &mut dyn Operation) {
+                self.content.as_overlay_mut().operate(renderer, operation);
             }
 
             fn mouse_interaction(
                 &self,
-                layout: Layout<'_>,
                 cursor: mouse::Cursor,
                 renderer: &Renderer,
             ) -> mouse::Interaction {
                 self.content
                     .as_overlay()
-                    .mouse_interaction(layout, cursor, renderer)
+                    .mouse_interaction(cursor, renderer)
             }
 
-            fn overlay<'b>(
-                &'b mut self,
-                layout: Layout<'b>,
+            fn index(&self) -> f32 {
+                self.content.as_overlay().index()
+            }
+
+            fn overlay<'c>(
+                &'c mut self,
                 renderer: &Renderer,
-            ) -> Option<overlay::Element<'b, Message, AnyTheme, Renderer>>
-            {
+            ) -> Vec<overlay::Element<'c, Message, AnyTheme, Renderer>> {
+                let theme = self.theme;
+
                 self.content
                     .as_overlay_mut()
-                    .overlay(layout, renderer)
-                    .map(|content| Overlay {
-                        theme: self.theme,
-                        content,
-                    })
-                    .map(|overlay| overlay::Element::new(Box::new(overlay)))
+                    .overlay(renderer)
+                    .into_iter()
+                    .map(|content| overlay::Element::new(Box::new(Overlay { theme, content })))
+                    .collect()
             }
         }
 
         self.content
-            .as_widget_mut()
-            .overlay(tree, layout, renderer, viewport, translation)
-            .map(|content| Overlay {
-                theme: &self.theme,
-                content,
+            .overlay(tree, layout, renderer, viewport, translation, window)
+            .into_iter()
+            .map(|content| {
+                overlay::Element::new(Box::new(Overlay {
+                    theme: &self.theme,
+                    content,
+                }))
             })
-            .map(|overlay| overlay::Element::new(Box::new(overlay)))
-    }
-
-    fn drag_destinations(
-        &self,
-        state: &Tree,
-        layout: Layout<'_>,
-        renderer: &Renderer,
-        dnd_rectangles: &mut crate::core::clipboard::DndDestinationRectangles,
-    ) {
-        if let Some(l) = layout.children().next() {
-            self.content.as_widget().drag_destinations(
-                state,
-                l.with_virtual_offset(layout.virtual_offset()),
-                renderer,
-                dnd_rectangles,
-            );
-        }
-    }
-}
-
-impl<'a, Message, Theme, Renderer, AnyTheme>
-    From<Themer<'a, Message, Theme, Renderer>>
-    for Element<'a, Message, AnyTheme, Renderer>
-where
-    Message: 'a,
-    Theme: theme::Base + 'a,
-    AnyTheme: theme::Base,
-    Renderer: 'a + crate::core::Renderer,
-{
-    fn from(
-        themer: Themer<'a, Message, Theme, Renderer>,
-    ) -> Element<'a, Message, AnyTheme, Renderer> {
-        Element::new(themer)
+            .collect()
     }
 }

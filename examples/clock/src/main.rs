@@ -4,8 +4,8 @@ use iced::time::{self, milliseconds};
 use iced::widget::canvas::{Cache, Geometry, LineCap, Path, Stroke, stroke};
 use iced::widget::{canvas, container, text};
 use iced::{
-    Degrees, Element, Fill, Font, Point, Radians, Rectangle, Renderer, Size,
-    Subscription, Theme, Vector,
+    Degrees, Fill, Font, Point, Radians, Rectangle, Renderer, Size, Subscription, Theme, Vector,
+    Widget,
 };
 
 pub fn main() -> iced::Result {
@@ -48,20 +48,18 @@ impl Clock {
         }
     }
 
-    fn view(&self) -> Element<'_, Message> {
+    fn view(&self) -> impl Widget<Message> {
         let canvas = canvas(self as &Self).width(Fill).height(Fill);
 
-        container(canvas).padding(20).into()
+        container(canvas).padding(20)
     }
 
     fn subscription(&self) -> Subscription<Message> {
-        time::every(milliseconds(500))
-            .map(|_| Message::Tick(chrono::offset::Local::now()))
+        time::every(milliseconds(500)).map(|_| Message::Tick(chrono::offset::Local::now()))
     }
 
     fn theme(&self) -> Theme {
-        Theme::ALL[(self.now.timestamp() as usize / 10) % Theme::ALL.len()]
-            .clone()
+        Theme::ALL[(self.now.timestamp() as usize / 10) % Theme::ALL.len()].clone()
     }
 }
 
@@ -79,19 +77,16 @@ impl<Message> canvas::Program<Message> for Clock {
         use chrono::Timelike;
 
         let clock = self.clock.draw(renderer, bounds.size(), |frame| {
-            let palette = theme.extended_palette();
-
+            let palette = theme.palette();
             let center = frame.center();
             let radius = frame.width().min(frame.height()) / 2.0;
 
             let background = Path::circle(center, radius);
             frame.fill(&background, palette.secondary.strong.color);
 
-            let short_hand =
-                Path::line(Point::ORIGIN, Point::new(0.0, -0.5 * radius));
+            let short_hand = Path::line(Point::ORIGIN, Point::new(0.0, -0.5 * radius));
 
-            let long_hand =
-                Path::line(Point::ORIGIN, Point::new(0.0, -0.8 * radius));
+            let long_hand = Path::line(Point::ORIGIN, Point::new(0.0, -0.8 * radius));
 
             let width = radius / 100.0;
 
@@ -114,11 +109,9 @@ impl<Message> canvas::Program<Message> for Clock {
             };
 
             frame.translate(Vector::new(center.x, center.y));
-            let minutes_portion =
-                Radians::from(hand_rotation(self.now.minute(), 60)) / 12.0;
+            let minutes_portion = Radians::from(hand_rotation(self.now.minute(), 60)) / 12.0;
             let hour_hand_angle =
-                Radians::from(hand_rotation(self.now.hour(), 12))
-                    + minutes_portion;
+                Radians::from(hand_rotation(self.now.hour(), 12)) + minutes_portion;
 
             frame.with_save(|frame| {
                 frame.rotate(hour_hand_angle);
@@ -142,10 +135,7 @@ impl<Message> canvas::Program<Message> for Clock {
                 frame.fill_text(canvas::Text {
                     content: theme.to_string(),
                     size: (radius / 15.0).into(),
-                    position: Point::new(
-                        (0.78 * radius) * rotate_factor,
-                        -width * 2.0,
-                    ),
+                    position: Point::new((0.78 * radius) * rotate_factor, -width * 2.0),
                     color: palette.secondary.strong.text,
                     align_x: if rotate_factor > 0.0 {
                         text::Alignment::Right
@@ -160,8 +150,7 @@ impl<Message> canvas::Program<Message> for Clock {
 
             // Draw clock numbers
             for hour in 1..=12 {
-                let angle = Radians::from(hand_rotation(hour, 12))
-                    - Radians::from(Degrees(90.0));
+                let angle = Radians::from(hand_rotation(hour, 12)) - Radians::from(Degrees(90.0));
                 let x = radius * angle.0.cos();
                 let y = radius * angle.0.sin();
 
@@ -185,10 +174,7 @@ impl<Message> canvas::Program<Message> for Clock {
                 frame.with_save(|frame| {
                     frame.rotate(angle);
                     frame.fill(
-                        &Path::rectangle(
-                            Point::new(0.0, radius - 15.0),
-                            Size::new(width, 7.0),
-                        ),
+                        &Path::rectangle(Point::new(0.0, radius - 15.0), Size::new(width, 7.0)),
                         palette.secondary.strong.text,
                     );
                 });

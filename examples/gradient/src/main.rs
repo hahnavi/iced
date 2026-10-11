@@ -1,7 +1,7 @@
 use iced::gradient;
 use iced::theme;
 use iced::widget::{checkbox, column, container, row, slider, space, text};
-use iced::{Center, Color, Element, Fill, Radians, Theme, color};
+use iced::{Center, Color, Fill, Radians, Theme, Widget, color};
 
 pub fn main() -> iced::Result {
     tracing_subscriber::fmt::init();
@@ -49,7 +49,7 @@ impl Gradient {
         }
     }
 
-    fn view(&self) -> Element<'_, Message> {
+    fn view(&self) -> impl Widget<Message> {
         let Self {
             start,
             end,
@@ -70,8 +70,7 @@ impl Gradient {
 
         let angle_picker = row![
             text("Angle").width(64),
-            slider(Radians::RANGE, self.angle, Message::AngleChanged)
-                .step(0.01)
+            slider(Radians::RANGE, self.angle, Message::AngleChanged).step(0.01)
         ]
         .spacing(8)
         .padding(8)
@@ -91,14 +90,14 @@ impl Gradient {
             transparency_toggle,
             gradient_box,
         ]
-        .into()
     }
 
     fn style(&self, theme: &Theme) -> theme::Style {
         if self.transparent {
             theme::Style {
                 background_color: Color::TRANSPARENT,
-                text_color: theme.palette().text,
+                text_color: theme.seed().text,
+                icon_color: theme.seed().text,
             }
         } else {
             theme::default(theme)
@@ -112,20 +111,15 @@ impl Default for Gradient {
     }
 }
 
-fn color_picker(label: &str, color: Color) -> Element<'_, Color> {
+fn color_picker(label: &str, color: Color) -> impl Widget<Color> {
     row![
         text(label).width(64),
-        slider(0.0..=1.0, color.r, move |r| { Color { r, ..color } })
-            .step(0.01),
-        slider(0.0..=1.0, color.g, move |g| { Color { g, ..color } })
-            .step(0.01),
-        slider(0.0..=1.0, color.b, move |b| { Color { b, ..color } })
-            .step(0.01),
-        slider(0.0..=1.0, color.a, move |a| { Color { a, ..color } })
-            .step(0.01),
+        slider(0.0..=1.0, color.r, move |r| { Color { r, ..color } }).step(0.01),
+        slider(0.0..=1.0, color.g, move |g| { Color { g, ..color } }).step(0.01),
+        slider(0.0..=1.0, color.b, move |b| { Color { b, ..color } }).step(0.01),
+        slider(0.0..=1.0, color.a, move |a| { Color { a, ..color } }).step(0.01),
     ]
     .spacing(8)
     .padding(8)
     .align_y(Center)
-    .into()
 }

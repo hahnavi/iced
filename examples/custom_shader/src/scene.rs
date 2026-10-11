@@ -13,7 +13,7 @@ use iced::widget::shader::{self, Viewport};
 use iced::{Color, Rectangle};
 
 use glam::Vec3;
-use rand::Rng;
+use rand::RngExt;
 use std::cmp::Ordering;
 use std::iter;
 
@@ -168,19 +168,17 @@ impl shader::Primitive for Primitive {
 }
 
 fn rnd_origin() -> Vec3 {
+    let mut rng = rand::rng();
+
     Vec3::new(
-        rand::thread_rng().gen_range(-4.0..4.0),
-        rand::thread_rng().gen_range(-4.0..4.0),
-        rand::thread_rng().gen_range(-4.0..2.0),
+        rng.random_range(-4.0..4.0),
+        rng.random_range(-4.0..4.0),
+        rng.random_range(-4.0..2.0),
     )
 }
 
 impl shader::Pipeline for Pipeline {
-    fn new(
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        format: wgpu::TextureFormat,
-    ) -> Pipeline {
+    fn new(device: &wgpu::Device, queue: &wgpu::Queue, format: wgpu::TextureFormat) -> Pipeline {
         Self::new(device, queue, format)
     }
 }

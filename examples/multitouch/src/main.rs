@@ -5,7 +5,7 @@ use iced::mouse;
 use iced::touch;
 use iced::widget::canvas::stroke::{self, Stroke};
 use iced::widget::canvas::{self, Canvas, Event, Geometry};
-use iced::{Color, Element, Fill, Point, Rectangle, Renderer, Theme};
+use iced::{Color, Fill, Point, Rectangle, Renderer, Theme, Widget};
 
 use std::collections::HashMap;
 
@@ -43,8 +43,8 @@ impl Multitouch {
         }
     }
 
-    fn view(&self) -> Element<'_, Message> {
-        Canvas::new(self).width(Fill).height(Fill).into()
+    fn view(&self) -> impl Widget<Message> {
+        Canvas::new(self).width(Fill).height(Fill)
     }
 }
 
@@ -64,8 +64,7 @@ impl canvas::Program<Message> for Multitouch {
                 | touch::Event::FingerMoved { id, position },
             ) => Some(Message::FingerPressed { id, position }),
             Event::Touch(
-                touch::Event::FingerLifted { id, .. }
-                | touch::Event::FingerLost { id, .. },
+                touch::Event::FingerLifted { id, .. } | touch::Event::FingerLost { id, .. },
             ) => Some(Message::FingerLifted { id }),
             _ => None,
         };
@@ -101,14 +100,9 @@ impl canvas::Program<Message> for Multitouch {
                 .map(|(_, p)| (f64::from(p.x), f64::from(p.y)))
                 .collect();
 
-            let diagram: voronator::VoronoiDiagram<
-                voronator::delaunator::Point,
-            > = voronator::VoronoiDiagram::from_tuple(
-                &(0.0, 0.0),
-                &(700.0, 700.0),
-                &vpoints,
-            )
-            .expect("Generate Voronoi diagram");
+            let diagram: voronator::VoronoiDiagram<voronator::delaunator::Point> =
+                voronator::VoronoiDiagram::from_tuple(&(0.0, 0.0), &(700.0, 700.0), &vpoints)
+                    .expect("Generate Voronoi diagram");
 
             for (cell, zone) in diagram.cells().iter().zip(zones) {
                 let mut builder = canvas::path::Builder::new();

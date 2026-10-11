@@ -10,13 +10,11 @@ use iced::animation;
 use iced::border;
 use iced::time::{Instant, milliseconds};
 use iced::widget::{
-    button, container, float, grid, image, mouse_area, opaque, scrollable,
-    sensor, space, stack,
+    button, container, float, grid, image, mouse_area, opaque, scrollable, sensor, space, stack,
 };
 use iced::window;
 use iced::{
-    Animation, Color, ContentFit, Element, Fill, Function, Shadow,
-    Subscription, Task, Theme, color,
+    Animation, Color, ContentFit, Fill, Function, Shadow, Subscription, Task, Theme, Widget, color,
 };
 
 use std::collections::{HashMap, HashSet};
@@ -180,9 +178,7 @@ impl Gallery {
                     return Task::none();
                 }
 
-                let Some(Preview::Ready { thumbnail, .. }) =
-                    self.previews.get_mut(&id)
-                else {
+                let Some(Preview::Ready { thumbnail, .. }) = self.previews.get_mut(&id) else {
                     return Task::none();
                 };
 
@@ -246,7 +242,7 @@ impl Gallery {
         }
     }
 
-    pub fn view(&self) -> Element<'_, Message> {
+    pub fn view(&self) -> impl Widget<Message> {
         let images = self
             .images
             .iter()
@@ -260,6 +256,7 @@ impl Gallery {
                     },
                     self.now,
                 )
+                .boxed()
             })
             .chain(
                 if self.images.is_empty() {
@@ -267,7 +264,7 @@ impl Gallery {
                 } else {
                     0..0
                 }
-                .map(|_| placeholder()),
+                .map(|_| placeholder().boxed()),
             );
 
         let gallery = grid(images)
@@ -275,12 +272,10 @@ impl Gallery {
             .height(grid::aspect_ratio(Preview::WIDTH, Preview::HEIGHT))
             .spacing(10);
 
-        let content =
-            container(scrollable(gallery).spacing(10).auto_scroll(true))
-                .padding(10);
+        let content = container(scrollable(gallery).spacing(10).auto_scroll(true)).padding(10);
         let viewer = self.viewer.view(self.now);
 
-        stack![content, viewer].into()
+        stack![content, viewer]
     }
 }
 
@@ -288,38 +283,35 @@ fn card<'a>(
     metadata: &'a Image,
     preview: Option<&'a Preview>,
     now: Instant,
-) -> Element<'a, Message> {
+) -> impl Widget<Message> + 'a {
     let image = if let Some(preview) = preview {
-        let thumbnail: Element<'_, _> =
-            if let Preview::Ready { thumbnail, .. } = &preview
-                && let Some(allocation) = &thumbnail.allocation
-            {
-                float(
-                    image(allocation.handle())
-                        .width(Fill)
-                        .content_fit(ContentFit::Cover)
-                        .opacity(thumbnail.fade_in.interpolate(0.0, 1.0, now))
-                        .border_radius(BORDER_RADIUS),
-                )
-                .scale(thumbnail.zoom.interpolate(1.0, 1.1, now))
-                .translate(move |bounds, viewport| {
-                    bounds.zoom(1.1).offset(&viewport.shrink(10))
-                        * thumbnail.zoom.interpolate(0.0, 1.0, now)
-                })
-                .style(move |_theme| float::Style {
-                    shadow: Shadow {
-                        color: Color::BLACK.scale_alpha(
-                            thumbnail.zoom.interpolate(0.0, 1.0, now),
-                        ),
-                        blur_radius: thumbnail.zoom.interpolate(0.0, 20.0, now),
-                        ..Shadow::default()
-                    },
-                    shadow_border_radius: border::radius(BORDER_RADIUS),
-                })
-                .into()
-            } else {
-                space::horizontal().into()
-            };
+        let thumbnail = if let Preview::Ready { thumbnail, .. } = &preview
+            && let Some(allocation) = &thumbnail.allocation
+        {
+            float(
+                image(allocation.handle())
+                    .width(Fill)
+                    .content_fit(ContentFit::Cover)
+                    .opacity(thumbnail.fade_in.interpolate(0.0, 1.0, now))
+                    .border_radius(BORDER_RADIUS),
+            )
+            .scale(thumbnail.zoom.interpolate(1.0, 1.1, now))
+            .translate(move |bounds, viewport| {
+                bounds.zoom(1.1).offset(&viewport.shrink(10))
+                    * thumbnail.zoom.interpolate(0.0, 1.0, now)
+            })
+            .style(move |_theme| float::Style {
+                shadow: Shadow {
+                    color: Color::BLACK.scale_alpha(thumbnail.zoom.interpolate(0.0, 1.0, now)),
+                    blur_radius: thumbnail.zoom.interpolate(0.0, 20.0, now),
+                    ..Shadow::default()
+                },
+                shadow_border_radius: border::radius(BORDER_RADIUS),
+            })
+            .boxed()
+        } else {
+            space::horizontal().boxed()
+        };
 
         if let Some(blurhash) = preview.blurhash(now) {
             let blurhash = image(&blurhash.handle)
@@ -328,38 +320,37 @@ fn card<'a>(
                 .opacity(blurhash.fade_in.interpolate(0.0, 1.0, now))
                 .border_radius(BORDER_RADIUS);
 
-            stack![blurhash, thumbnail].into()
+            stack![blurhash, thumbnail].boxed()
         } else {
             thumbnail
         }
     } else {
-        space::horizontal().into()
+        space::horizontal().boxed()
     };
 
     let card = mouse_area(container(image).style(rounded))
         .on_enter(Message::ThumbnailHovered(metadata.id, true))
         .on_exit(Message::ThumbnailHovered(metadata.id, false));
 
-    let card: Element<'_, _> = if let Some(preview) = preview {
+    let card = if let Some(preview) = preview {
         let is_thumbnail = matches!(preview, Preview::Ready { .. });
 
         button(card)
             .on_press_maybe(is_thumbnail.then_some(Message::Open(metadata.id)))
             .padding(0)
             .style(button::text)
-            .into()
+            .boxed()
     } else {
-        card.into()
+        card.boxed()
     };
 
     sensor(card)
         .on_show(|_| Message::ImagePoppedIn(metadata.id))
         .on_hide(Message::ImagePoppedOut(metadata.id))
-        .into()
 }
 
-fn placeholder<'a>() -> Element<'a, Message> {
-    container(space()).style(rounded).into()
+fn placeholder() -> impl Widget<Message> {
+    container(space()).style(rounded)
 }
 
 enum Preview {
@@ -407,11 +398,7 @@ impl Preview {
                     .duration(milliseconds(700))
                     .easing(animation::Easing::EaseIn)
                     .go(true, now),
-                handle: image::Handle::from_rgba(
-                    rgba.width,
-                    rgba.height,
-                    rgba.pixels,
-                ),
+                handle: image::Handle::from_rgba(rgba.width, rgba.height, rgba.pixels),
             },
         }
     }
@@ -449,9 +436,9 @@ impl Preview {
             } => {
                 thumbnail.fade_in.is_animating(now)
                     || thumbnail.zoom.is_animating(now)
-                    || blurhash.as_ref().is_some_and(|blurhash| {
-                        blurhash.fade_in.is_animating(now)
-                    })
+                    || blurhash
+                        .as_ref()
+                        .is_some_and(|blurhash| blurhash.fade_in.is_animating(now))
             }
         }
     }
@@ -463,9 +450,7 @@ impl Preview {
                 blurhash: Some(blurhash),
                 thumbnail,
                 ..
-            } if !thumbnail.fade_in.value()
-                || thumbnail.fade_in.is_animating(now) =>
-            {
+            } if !thumbnail.fade_in.value() || thumbnail.fade_in.is_animating(now) => {
                 Some(blurhash)
             }
             Self::Ready { .. } => None,
@@ -491,7 +476,7 @@ impl Thumbnail {
         self.allocation = None;
         self.fade_in = Animation::new(false)
             .easing(animation::Easing::EaseIn)
-            .quick();
+            .very_quick();
     }
 
     pub fn show(&mut self, allocation: image::Allocation, now: Instant) {
@@ -536,11 +521,10 @@ impl Viewer {
     }
 
     fn is_animating(&self, now: Instant) -> bool {
-        self.background_fade_in.is_animating(now)
-            || self.image_fade_in.is_animating(now)
+        self.background_fade_in.is_animating(now) || self.image_fade_in.is_animating(now)
     }
 
-    fn view(&self, now: Instant) -> Option<Element<'_, Message>> {
+    fn view(&self, now: Instant) -> Option<impl Widget<Message>> {
         let opacity = self.background_fade_in.interpolate(0.0, 0.8, now);
 
         if opacity <= 0.0 {
@@ -560,8 +544,7 @@ impl Viewer {
                 container(image)
                     .center(Fill)
                     .style(move |_theme| {
-                        container::Style::default()
-                            .background(color!(0x000000, opacity))
+                        container::Style::default().background(color!(0x000000, opacity))
                     })
                     .padding(20),
             )
@@ -572,19 +555,13 @@ impl Viewer {
 
 fn to_rgba(bytes: Bytes) -> Task<image::Handle> {
     Task::future(async move {
-        tokio::task::spawn_blocking(move || {
-            match ::image::load_from_memory(bytes.as_slice()) {
-                Ok(image) => {
-                    let rgba = image.to_rgba8();
+        tokio::task::spawn_blocking(move || match ::image::load_from_memory(bytes.as_slice()) {
+            Ok(image) => {
+                let rgba = image.to_rgba8();
 
-                    image::Handle::from_rgba(
-                        rgba.width(),
-                        rgba.height(),
-                        rgba.into_raw(),
-                    )
-                }
-                _ => image::Handle::from_bytes(bytes),
+                image::Handle::from_rgba(rgba.width(), rgba.height(), rgba.into_raw())
             }
+            _ => image::Handle::from_bytes(bytes),
         })
         .await
         .unwrap()

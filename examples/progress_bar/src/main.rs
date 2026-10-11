@@ -1,8 +1,8 @@
-use iced::Element;
+use iced::animation;
 use iced::widget::{
-    center, center_x, checkbox, column, progress_bar, row, slider,
-    vertical_slider,
+    center, center_x, checkbox, column, progress_bar, row, slider, transition, vertical_slider,
 };
+use iced::{Animation, Widget};
 
 pub fn main() -> iced::Result {
     iced::run(Progress::update, Progress::view)
@@ -24,37 +24,41 @@ impl Progress {
     fn update(&mut self, message: Message) {
         match message {
             Message::SliderChanged(x) => self.value = x,
-            Message::ToggleVertical(is_vertical) => {
-                self.is_vertical = is_vertical
-            }
+            Message::ToggleVertical(is_vertical) => self.is_vertical = is_vertical,
         }
     }
 
-    fn view(&self) -> Element<'_, Message> {
-        let bar = progress_bar(0.0..=100.0, self.value);
+    fn view(&self) -> impl Widget<Message> {
+        let bar = transition(
+            self.value,
+            || {
+                Animation::new(0.)
+                    .slow()
+                    .easing(animation::Easing::EaseOutBounce)
+            },
+            |animation, at| {
+                progress_bar(0.0..=100.0, animation.interpolate(at)).vertical(self.is_vertical)
+            },
+        );
 
         column![
             if self.is_vertical {
                 center(
                     row![
-                        bar.vertical(),
-                        vertical_slider(
-                            0.0..=100.0,
-                            self.value,
-                            Message::SliderChanged
-                        )
-                        .step(0.01)
+                        bar,
+                        vertical_slider(0.0..=100.0, self.value, Message::SliderChanged).step(0.01),
                     ]
-                    .spacing(20),
+                    .spacing(20)
+                    .boxed(),
                 )
             } else {
                 center(
                     column![
                         bar,
-                        slider(0.0..=100.0, self.value, Message::SliderChanged)
-                            .step(0.01)
+                        slider(0.0..=100.0, self.value, Message::SliderChanged).step(0.01)
                     ]
-                    .spacing(20),
+                    .spacing(20)
+                    .boxed(),
                 )
             },
             center_x(
@@ -65,6 +69,5 @@ impl Progress {
         ]
         .spacing(20)
         .padding(20)
-        .into()
     }
 }

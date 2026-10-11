@@ -56,12 +56,7 @@ impl Node {
         min_size: f32,
         bounds: Size,
     ) -> BTreeMap<Pane, Rectangle> {
-        self.pane_regions_with_min_sizes(
-            spacing,
-            min_size,
-            &BTreeMap::new(),
-            bounds,
-        )
+        self.pane_regions_with_min_sizes(spacing, min_size, &BTreeMap::new(), bounds)
     }
 
     /// Returns the rectangular region for each [`Pane`] with optional
@@ -100,12 +95,7 @@ impl Node {
         min_size: f32,
         bounds: Size,
     ) -> BTreeMap<Split, (Axis, Rectangle, f32)> {
-        self.split_regions_with_min_sizes(
-            spacing,
-            min_size,
-            &BTreeMap::new(),
-            bounds,
-        )
+        self.split_regions_with_min_sizes(spacing, min_size, &BTreeMap::new(), bounds)
     }
 
     /// Returns split regions while respecting pane-specific minimum sizes.
@@ -137,9 +127,7 @@ impl Node {
 
     pub(crate) fn find(&mut self, pane: Pane) -> Option<&mut Node> {
         match self {
-            Node::Split { a, b, .. } => {
-                a.find(pane).or_else(move || b.find(pane))
-            }
+            Node::Split { a, b, .. } => a.find(pane).or_else(move || b.find(pane)),
             Node::Pane(p) => {
                 if *p == pane {
                     Some(self)
@@ -241,22 +229,17 @@ impl Node {
             Node::Split {
                 axis, ratio, a, b, ..
             } => {
-                let minimum_a = a.minimum_size(spacing, min_size, min_sizes);
-                let minimum_b = b.minimum_size(spacing, min_size, min_sizes);
-                let (minimum_a, minimum_b) = match axis {
-                    Axis::Horizontal => (minimum_a.height, minimum_b.height),
-                    Axis::Vertical => (minimum_a.width, minimum_b.width),
+                let min_a = a.minimum_size(spacing, min_size, min_sizes);
+                let min_b = b.minimum_size(spacing, min_size, min_sizes);
+                let (min_a, min_b) = match axis {
+                    Axis::Horizontal => (min_a.height, min_b.height),
+                    Axis::Vertical => (min_a.width, min_b.width),
                 };
 
-                let (region_a, region_b, _ratio) =
-                    axis.split(current, *ratio, spacing, minimum_a, minimum_b);
+                let (region_a, region_b, _) = axis.split(current, *ratio, spacing, min_a, min_b);
 
-                a.compute_regions(
-                    spacing, min_size, min_sizes, &region_a, regions,
-                );
-                b.compute_regions(
-                    spacing, min_size, min_sizes, &region_b, regions,
-                );
+                a.compute_regions(spacing, min_size, min_sizes, &region_a, regions);
+                b.compute_regions(spacing, min_size, min_sizes, &region_b, regions);
             }
             Node::Pane(pane) => {
                 let _ = regions.insert(*pane, *current);
@@ -280,35 +263,26 @@ impl Node {
                 b,
                 id,
             } => {
-                let minimum_a = a.minimum_size(spacing, min_size, min_sizes);
-                let minimum_b = b.minimum_size(spacing, min_size, min_sizes);
-                let (minimum_a, minimum_b) = match axis {
-                    Axis::Horizontal => (minimum_a.height, minimum_b.height),
-                    Axis::Vertical => (minimum_a.width, minimum_b.width),
+                let min_a = a.minimum_size(spacing, min_size, min_sizes);
+                let min_b = b.minimum_size(spacing, min_size, min_sizes);
+                let (min_a, min_b) = match axis {
+                    Axis::Horizontal => (min_a.height, min_b.height),
+                    Axis::Vertical => (min_a.width, min_b.width),
                 };
 
                 let (region_a, region_b, ratio) =
-                    axis.split(current, *ratio, spacing, minimum_a, minimum_b);
+                    axis.split(current, *ratio, spacing, min_a, min_b);
 
                 let _ = splits.insert(*id, (*axis, *current, ratio));
 
-                a.compute_splits(
-                    spacing, min_size, min_sizes, &region_a, splits,
-                );
-                b.compute_splits(
-                    spacing, min_size, min_sizes, &region_b, splits,
-                );
+                a.compute_splits(spacing, min_size, min_sizes, &region_a, splits);
+                b.compute_splits(spacing, min_size, min_sizes, &region_b, splits);
             }
             Node::Pane(_) => {}
         }
     }
 
-    fn minimum_size(
-        &self,
-        spacing: f32,
-        fallback: f32,
-        min_sizes: &BTreeMap<Pane, Size>,
-    ) -> Size {
+    fn minimum_size(&self, spacing: f32, fallback: f32, min_sizes: &BTreeMap<Pane, Size>) -> Size {
         match self {
             Node::Pane(pane) => min_sizes
                 .get(pane)
@@ -318,14 +292,12 @@ impl Node {
                 let a = a.minimum_size(spacing, fallback, min_sizes);
                 let b = b.minimum_size(spacing, fallback, min_sizes);
                 match axis {
-                    Axis::Horizontal => Size::new(
-                        a.width.max(b.width),
-                        a.height + b.height + spacing,
-                    ),
-                    Axis::Vertical => Size::new(
-                        a.width + b.width + spacing,
-                        a.height.max(b.height),
-                    ),
+                    Axis::Horizontal => {
+                        Size::new(a.width.max(b.width), a.height + b.height + spacing)
+                    }
+                    Axis::Vertical => {
+                        Size::new(a.width + b.width + spacing, a.height.max(b.height))
+                    }
                 }
             }
         }
@@ -373,12 +345,8 @@ mod tests {
             (Pane(1), Size::new(350.0, 100.0)),
         ]);
 
-        let regions = node.pane_regions_with_min_sizes(
-            10.0,
-            50.0,
-            &min_sizes,
-            Size::new(1000.0, 600.0),
-        );
+        let regions =
+            node.pane_regions_with_min_sizes(10.0, 50.0, &min_sizes, Size::new(1000.0, 600.0));
 
         assert!(regions[&Pane(0)].width >= 250.0);
         assert!(regions[&Pane(1)].width >= 350.0);
@@ -399,12 +367,7 @@ mod tests {
         ]);
 
         let split = node
-            .split_regions_with_min_sizes(
-                10.0,
-                50.0,
-                &min_sizes,
-                Size::new(1000.0, 600.0),
-            )
+            .split_regions_with_min_sizes(10.0, 50.0, &min_sizes, Size::new(1000.0, 600.0))
             .remove(&Split(0))
             .expect("split should be present");
 

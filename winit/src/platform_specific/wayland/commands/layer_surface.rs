@@ -18,9 +18,7 @@ pub use cctk::sctk::shell::wlr_layer::{Anchor, KeyboardInteractivity, Layer};
 
 // TODO ASHLEY: maybe implement as builder that outputs a batched commands
 /// <https://wayland.app/protocols/wlr-layer-shell-unstable-v1#zwlr_layer_shell_v1:request:get_layer_surface>
-pub fn get_layer_surface<Message>(
-    builder: SctkLayerSurfaceSettings,
-) -> Task<Message> {
+pub fn get_layer_surface<Message>(builder: SctkLayerSurfaceSettings) -> Task<Message> {
     task::effect(Action::PlatformSpecific(
         platform_specific::Action::Wayland(wayland::Action::LayerSurface(
             wayland::layer_surface::Action::LayerSurface { builder },
@@ -38,11 +36,7 @@ pub fn destroy_layer_surface<Message>(id: SurfaceId) -> Task<Message> {
 }
 
 /// <https://wayland.app/protocols/wlr-layer-shell-unstable-v1#zwlr_layer_surface_v1:request:set_size>
-pub fn set_size<Message>(
-    id: SurfaceId,
-    width: Option<u32>,
-    height: Option<u32>,
-) -> Task<Message> {
+pub fn set_size<Message>(id: SurfaceId, width: Option<u32>, height: Option<u32>) -> Task<Message> {
     task::effect(Action::PlatformSpecific(
         platform_specific::Action::Wayland(wayland::Action::LayerSurface(
             wayland::layer_surface::Action::Size { id, width, height },
@@ -116,10 +110,7 @@ pub fn set_layer<Message>(id: SurfaceId, layer: Layer) -> Task<Message> {
     ))
 }
 
-pub fn set_padding<Message>(
-    id: SurfaceId,
-    padding: IcedMargin,
-) -> Task<Message> {
+pub fn set_padding<Message>(id: SurfaceId, padding: IcedMargin) -> Task<Message> {
     task::effect(Action::PlatformSpecific(
         platform_specific::Action::Wayland(wayland::Action::LayerSurface(
             wayland::layer_surface::Action::Padding { id, padding },
@@ -128,10 +119,7 @@ pub fn set_padding<Message>(
 }
 
 /// <https://wayland.app/protocols/wayland#wl_surface:request:set_input_region>
-pub fn set_input_zone<Message>(
-    id: SurfaceId,
-    zone: Option<Vec<Rectangle>>,
-) -> Task<Message> {
+pub fn set_input_zone<Message>(id: SurfaceId, zone: Option<Vec<Rectangle>>) -> Task<Message> {
     task::effect(Action::PlatformSpecific(
         platform_specific::Action::Wayland(wayland::Action::LayerSurface(
             wayland::layer_surface::Action::InputZone { id, zone },

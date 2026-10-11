@@ -1,4 +1,5 @@
 //! Handle events of a user interface.
+use crate::clipboard;
 use crate::input_method;
 use dnd::DndEvent;
 use dnd::DndSurface;
@@ -33,25 +34,32 @@ pub enum Event {
 
     /// An input method event
     InputMethod(input_method::Event),
+
+    /// A clipboard event
+    Clipboard(clipboard::Event),
+
+    /// A wake event, produced by a [`Waker`](crate::shell::Waker).
+    Waken,
+
+    /// An accessibility action requested for a widget.
     #[cfg(feature = "a11y")]
-    /// An Accesskit event for a specific Accesskit Node in an accessible widget
     A11y(
-        crate::widget::Id,
+        iced_accessibility::A11yId,
         iced_accessibility::accesskit::ActionRequest,
     ),
 
-    /// A DnD event.
+    /// A drag-and-drop event.
     Dnd(DndEvent<DndSurface>),
 
-    /// Platform specific events
+    /// An event specific to the current platform.
     PlatformSpecific(PlatformSpecific),
 }
 
-/// A platform specific event
+/// Platform-specific events delivered to widgets.
 #[derive(Debug, Clone, PartialEq)]
 pub enum PlatformSpecific {
+    /// A Wayland-specific event.
     #[cfg(wayland_platform)]
-    /// A Wayland specific event
     Wayland(wayland::Event),
 }
 

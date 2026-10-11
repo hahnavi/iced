@@ -8,7 +8,9 @@ use sctk::globals::GlobalData;
 use sctk::reexports::client::globals::{BindError, GlobalList};
 use sctk::reexports::client::protocol::wl_surface::WlSurface;
 use sctk::reexports::client::{Connection, Dispatch, Proxy, QueueHandle, delegate_dispatch};
-use wayland_protocols::ext::background_effect::v1::client::ext_background_effect_manager_v1::{Capability, Event, ExtBackgroundEffectManagerV1};
+use wayland_protocols::ext::background_effect::v1::client::ext_background_effect_manager_v1::{
+    Capability, Event, ExtBackgroundEffectManagerV1,
+};
 use wayland_protocols::ext::background_effect::v1::client::ext_background_effect_surface_v1::ExtBackgroundEffectSurfaceV1;
 
 use crate::event_loop::state::SctkState;
@@ -52,9 +54,7 @@ impl ExtBackgroundEffectManager {
     }
 }
 
-impl Dispatch<ExtBackgroundEffectManagerV1, GlobalData, SctkState>
-    for ExtBackgroundEffectManager
-{
+impl Dispatch<ExtBackgroundEffectManagerV1, GlobalData, SctkState> for ExtBackgroundEffectManager {
     fn event(
         state: &mut SctkState,
         _: &ExtBackgroundEffectManagerV1,
@@ -67,18 +67,11 @@ impl Dispatch<ExtBackgroundEffectManagerV1, GlobalData, SctkState>
             Event::Capabilities { flags } => match flags {
                 wayland_client::WEnum::Value(capability) => {
                     let mut queued_actions = Vec::new();
-                    if let Some(bg_effect_mgr) =
-                        state.ext_background_effect_manager.as_mut()
-                    {
+                    if let Some(bg_effect_mgr) = state.ext_background_effect_manager.as_mut() {
                         bg_effect_mgr.capabilities = capability;
                         if capability.contains(Capability::Blur) {
-                            queued_actions = bg_effect_mgr
-                                .queued_blur_actions
-                                .drain()
-                                .collect();
-                            state
-                                .sctk_events
-                                .push(crate::sctk_event::SctkEvent::Blur);
+                            queued_actions = bg_effect_mgr.queued_blur_actions.drain().collect();
+                            state.sctk_events.push(crate::sctk_event::SctkEvent::Blur);
                         }
                     }
                     for (id, rects) in queued_actions {
@@ -96,9 +89,7 @@ impl Dispatch<ExtBackgroundEffectManagerV1, GlobalData, SctkState>
     }
 }
 
-impl Dispatch<ExtBackgroundEffectSurfaceV1, (), SctkState>
-    for ExtBackgroundEffectManager
-{
+impl Dispatch<ExtBackgroundEffectSurfaceV1, (), SctkState> for ExtBackgroundEffectManager {
     fn event(
         _: &mut SctkState,
         _: &ExtBackgroundEffectSurfaceV1,

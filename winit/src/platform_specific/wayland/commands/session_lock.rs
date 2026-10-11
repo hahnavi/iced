@@ -22,10 +22,7 @@ pub fn unlock<Message>() -> Task<Message> {
     ))
 }
 
-pub fn get_lock_surface<Message>(
-    id: SurfaceId,
-    output: WlOutput,
-) -> Task<Message> {
+pub fn get_lock_surface<Message>(id: SurfaceId, output: WlOutput) -> Task<Message> {
     task::effect(Action::PlatformSpecific(
         platform_specific::Action::Wayland(wayland::Action::SessionLock(
             wayland::session_lock::Action::LockSurface { id, output },

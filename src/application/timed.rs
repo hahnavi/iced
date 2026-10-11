@@ -1,13 +1,11 @@
 //! An [`Application`] that receives an [`Instant`] in update logic.
 use crate::application::{Application, BootFn, ViewFn};
+use crate::core::Widget;
 use crate::program;
 use crate::theme;
 use crate::time::Instant;
 use crate::window;
-use crate::{Element, Settings, Subscription, task::Task};
-
-use iced_debug as debug;
-use iced_program::Program;
+use crate::{Program, Settings, Subscription, Task};
 
 /// Creates an [`Application`] with an `update` function that also
 /// takes the [`Instant`] of each `Message`.
@@ -25,9 +23,7 @@ pub fn timed<State, Message, Theme, Renderer>(
     update: impl UpdateFn<State, Message>,
     subscription: impl Fn(&State) -> Subscription<Message>,
     view: impl for<'a> ViewFn<'a, State, Message, Theme, Renderer>,
-) -> Application<
-    impl Program<State = State, Message = (Message, Instant), Theme = Theme>,
->
+) -> Application<impl Program<State = State, Message = (Message, Instant), Theme = Theme>>
 where
     State: 'static,
     Message: Send + 'static,
@@ -36,16 +32,7 @@ where
 {
     use std::marker::PhantomData;
 
-    struct Instance<
-        State,
-        Message,
-        Theme,
-        Renderer,
-        Boot,
-        Update,
-        Subscription,
-        View,
-    > {
+    struct Instance<State, Message, Theme, Renderer, Boot, Update, Subscription, View> {
         boot: Boot,
         update: Update,
         subscription: Subscription,
@@ -56,18 +43,8 @@ where
         _renderer: PhantomData<Renderer>,
     }
 
-    impl<State, Message, Theme, Renderer, Boot, Update, Subscription, View>
-        Program
-        for Instance<
-            State,
-            Message,
-            Theme,
-            Renderer,
-            Boot,
-            Update,
-            Subscription,
-            View,
-        >
+    impl<State, Message, Theme, Renderer, Boot, Update, Subscription, View> Program
+        for Instance<State, Message, Theme, Renderer, Boot, Update, Subscription, View>
     where
         Message: Send + 'static,
         Theme: theme::Base + 'static,
@@ -103,44 +80,32 @@ where
             (state, task.map(|message| (message, Instant::now())))
         }
 
+        #[inline]
         fn update(
             &self,
-            state: &mut <Self as Program>::State,
-            (message, now): <Self as Program>::Message,
-        ) -> Task<<Self as Program>::Message> {
-            debug::hot(move || {
-                self.update
-                    .update(state, message, now)
-                    .into()
-                    .map(|message| (message, Instant::now()))
-            })
+            state: &mut Self::State,
+            (message, now): Self::Message,
+        ) -> Task<Self::Message> {
+            self.update
+                .update(state, message, now)
+                .into()
+                .map(|message| (message, Instant::now()))
         }
 
+        #[inline]
         fn view<'a>(
             &self,
             state: &'a <Self as Program>::State,
             _window: window::Id,
-        ) -> Element<
-            'a,
-            <Self as Program>::Message,
-            <Self as Program>::Theme,
-            <Self as Program>::Renderer,
-        > {
-            debug::hot(|| {
-                self.view
-                    .view(state)
-                    .map(|message| (message, Instant::now()))
-            })
+        ) -> impl Widget<Self::Message, Self::Theme, Self::Renderer> + 'a {
+            self.view
+                .view(state)
+                ._map(|message| (message, Instant::now()))
         }
 
-        fn subscription(
-            &self,
-            state: &<Self as Program>::State,
-        ) -> self::Subscription<<Self as Program>::Message> {
-            debug::hot(|| {
-                (self.subscription)(state)
-                    .map(|message| (message, Instant::now()))
-            })
+        #[inline]
+        fn subscription(&self, state: &Self::State) -> self::Subscription<Self::Message> {
+            (self.subscription)(state).map(|message| (message, Instant::now()))
         }
     }
 
@@ -167,12 +132,8 @@ where
 /// but it also takes an [`Instant`].
 pub trait UpdateFn<State, Message> {
     /// Processes the message and updates the state of the [`Application`].
-    fn update(
-        &self,
-        state: &mut State,
-        message: Message,
-        now: Instant,
-    ) -> impl Into<Task<Message>>;
+    fn update(&self, state: &mut State, message: Message, now: Instant)
+    -> impl Into<Task<Message>>;
 }
 
 impl<State, Message> UpdateFn<State, Message> for () {

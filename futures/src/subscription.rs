@@ -30,6 +30,23 @@ pub enum Event {
 
     /// The system theme has changed.
     SystemThemeChanged(theme::Mode),
+
+    /// A platform-specific runtime event.
+    PlatformSpecific(PlatformSpecific),
+}
+
+/// Platform-specific events emitted by a runtime.
+#[derive(Debug, Clone, PartialEq)]
+pub enum PlatformSpecific {
+    /// A macOS-specific event.
+    MacOS(MacOS),
+}
+
+/// macOS-specific events.
+#[derive(Debug, Clone, PartialEq)]
+pub enum MacOS {
+    /// The application was opened with a URL.
+    ReceivedUrl(String),
 }
 
 /// A stream of runtime events.
@@ -207,11 +224,46 @@ impl<T> Subscription<T> {
         })
     }
 
+    /// Returns a [`Subscription`] identified by `id` that runs the provided stream.
+    ///
+    /// The stream is created when this method is called. Prefer [`run`] or
+    /// [`run_with`] when the stream should be created lazily by the runtime.
+    pub fn run_with_id<I, S>(id: I, stream: S) -> Self
+    where
+        I: Hash + 'static,
+        S: Stream<Item = T> + MaybeSend + 'static,
+        T: 'static,
+    {
+        struct RunWithId<I, S> {
+            id: I,
+            stream: S,
+        }
+
+        impl<I, S, T> Recipe for RunWithId<I, S>
+        where
+            I: Hash + 'static,
+            S: Stream<Item = T> + MaybeSend + 'static,
+            T: 'static,
+        {
+            type Output = T;
+
+            fn hash(&self, state: &mut Hasher) {
+                TypeId::of::<I>().hash(state);
+                self.id.hash(state);
+                TypeId::of::<S>().hash(state);
+            }
+
+            fn stream(self: Box<Self>, _input: EventStream) -> BoxStream<T> {
+                crate::boxed_stream(self.stream)
+            }
+        }
+
+        from_recipe(RunWithId { id, stream })
+    }
+
     /// Batches all the provided subscriptions and returns the resulting
     /// [`Subscription`].
-    pub fn batch(
-        subscriptions: impl IntoIterator<Item = Subscription<T>>,
-    ) -> Self {
+    pub fn batch(subscriptions: impl IntoIterator<Item = Subscription<T>>) -> Self {
         Self {
             recipes: subscriptions
                 .into_iter()
@@ -246,10 +298,7 @@ impl<T> Subscription<T> {
                 self.recipe.hash(state);
             }
 
-            fn stream(
-                self: Box<Self>,
-                input: EventStream,
-            ) -> BoxStream<Self::Output> {
+            fn stream(self: Box<Self>, input: EventStream) -> BoxStream<Self::Output> {
                 use futures::StreamExt;
 
                 let value = self.value;
@@ -310,10 +359,7 @@ impl<T> Subscription<T> {
                 self.recipe.hash(state);
             }
 
-            fn stream(
-                self: Box<Self>,
-                input: EventStream,
-            ) -> BoxStream<Self::Output> {
+            fn stream(self: Box<Self>, input: EventStream) -> BoxStream<Self::Output> {
                 use futures::StreamExt;
 
                 Box::pin(self.recipe.stream(input).map(self.mapper))
@@ -369,10 +415,7 @@ impl<T> Subscription<T> {
                 self.recipe.hash(state);
             }
 
-            fn stream(
-                self: Box<Self>,
-                input: EventStream,
-            ) -> BoxStream<Self::Output> {
+            fn stream(self: Box<Self>, input: EventStream) -> BoxStream<Self::Output> {
                 use futures::StreamExt;
                 use futures::future;
 
@@ -406,19 +449,21 @@ impl<T> Subscription<T> {
     }
 }
 
+impl<T> Default for Subscription<T> {
+    fn default() -> Self {
+        Self::none()
+    }
+}
+
 /// Creates a [`Subscription`] from a [`Recipe`] describing it.
-pub fn from_recipe<T>(
-    recipe: impl Recipe<Output = T> + 'static,
-) -> Subscription<T> {
+pub fn from_recipe<T>(recipe: impl Recipe<Output = T> + 'static) -> Subscription<T> {
     Subscription {
         recipes: vec![Box::new(recipe)],
     }
 }
 
 /// Returns the different recipes of the [`Subscription`].
-pub fn into_recipes<T>(
-    subscription: Subscription<T>,
-) -> Vec<Box<dyn Recipe<Output = T>>> {
+pub fn into_recipes<T>(subscription: Subscription<T>) -> Vec<Box<dyn Recipe<Output = T>>> {
     subscription.recipes
 }
 

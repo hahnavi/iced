@@ -1,8 +1,10 @@
 //! Widget and Window IDs.
 
 use std::borrow::{self, Cow};
+use std::collections::HashMap;
 use std::hash::Hash;
 use std::sync::atomic::{self, AtomicU64};
+use std::sync::{Mutex, OnceLock};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum A11yId {
@@ -36,9 +38,7 @@ impl From<Id> for A11yId {
 impl IdEq for A11yId {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (A11yId::Widget(self_), A11yId::Widget(other)) => {
-                IdEq::eq(self_, other)
-            }
+            (A11yId::Widget(self_), A11yId::Widget(other)) => IdEq::eq(self_, other),
             _ => self == other,
         }
     }
@@ -47,10 +47,10 @@ impl IdEq for A11yId {
 impl From<accesskit::NodeId> for A11yId {
     fn from(value: accesskit::NodeId) -> Self {
         let val = u64::from(value.0);
-        if val > u32::MAX as u64 {
+        if val & WINDOW_NODE_ID_PREFIX != 0 {
             Self::Window(value.0)
         } else {
-            Self::Widget(Id::from(val as u64))
+            Self::Widget(Id::from(val))
         }
     }
 }
@@ -67,6 +67,9 @@ impl From<A11yId> for accesskit::NodeId {
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 static NEXT_WINDOW_ID: AtomicU64 = AtomicU64::new(1);
+static CUSTOM_IDS: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();
+
+const WINDOW_NODE_ID_PREFIX: u64 = 1 << 63;
 
 /// The identifier of a generic widget.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -75,12 +78,24 @@ pub struct Id(pub Internal);
 impl Id {
     /// Creates a custom [`Id`].
     pub fn new(id: impl Into<borrow::Cow<'static, str>>) -> Self {
-        Self(Internal::Custom(Self::next(), id.into()))
+        let id = id.into();
+        let mut ids = CUSTOM_IDS
+            .get_or_init(Default::default)
+            .lock()
+            .expect("Lock accessibility IDs");
+
+        let numeric_id = *ids.entry(id.to_string()).or_insert_with(Self::next);
+
+        Self(Internal::Custom(numeric_id, id))
     }
 
     /// resets the id counter
     pub fn reset() {
         NEXT_ID.store(1, atomic::Ordering::Relaxed);
+
+        if let Some(ids) = CUSTOM_IDS.get() {
+            ids.lock().expect("Lock accessibility IDs").clear();
+        }
     }
 
     fn next() -> u64 {
@@ -105,13 +120,13 @@ impl IdEq for Id {
 
 impl From<&'static str> for Id {
     fn from(value: &'static str) -> Self {
-        Id(Internal::Custom(Id::next(), Cow::Borrowed(value)))
+        Self::new(Cow::Borrowed(value))
     }
 }
 
 impl<'a> From<String> for Id {
     fn from(value: String) -> Self {
-        Id(Internal::Custom(Id::next(), Cow::Owned(value.to_string())))
+        Self::new(Cow::Owned(value))
     }
 }
 
@@ -150,8 +165,7 @@ impl std::fmt::Display for Id {
 // XXX WIndow IDs are made unique by adding u32::MAX to them
 /// get window node id that won't conflict with other node ids for the duration of the program
 pub fn window_node_id() -> u64 {
-    u32::MAX as u64
-        + NEXT_WINDOW_ID.fetch_add(1, atomic::Ordering::Relaxed) as u64
+    WINDOW_NODE_ID_PREFIX | NEXT_WINDOW_ID.fetch_add(1, atomic::Ordering::Relaxed)
 }
 
 // TODO refactor to make panic impossible?
@@ -189,17 +203,14 @@ impl IdEq for Internal {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::Unique(l0), Self::Unique(r0)) => l0 == r0,
-            (Self::Custom(l0, l1), Self::Custom(r0, r1)) => {
-                l0 == r0 || l1 == r1
-            }
+            (Self::Custom(l0, l1), Self::Custom(r0, r1)) => l0 == r0 || l1 == r1,
             // allow custom ids to be equal to unique ids
-            (Self::Unique(l0), Self::Custom(r0, _))
-            | (Self::Custom(l0, _), Self::Unique(r0)) => l0 == r0,
+            (Self::Unique(l0), Self::Custom(r0, _)) | (Self::Custom(l0, _), Self::Unique(r0)) => {
+                l0 == r0
+            }
             (Self::Set(l0), Self::Set(r0)) => l0 == r0,
             // allow set ids to just be equal to any of their members
-            (Self::Set(l0), r) | (r, Self::Set(l0)) => {
-                l0.iter().any(|l| l == r)
-            }
+            (Self::Set(l0), r) | (r, Self::Set(l0)) => l0.iter().any(|l| l == r),
         }
     }
 }
@@ -216,7 +227,7 @@ impl Hash for Internal {
 
 #[cfg(test)]
 mod tests {
-    use super::Id;
+    use super::{window_node_id, A11yId, Id, IdEq};
 
     #[test]
     fn unique_generates_different_ids() {
@@ -224,5 +235,28 @@ mod tests {
         let b = Id::unique();
 
         assert_ne!(a, b);
+    }
+
+    #[test]
+    fn custom_ids_have_stable_accesskit_ids() {
+        let first: A11yId = Id::new("stable-custom-id").into();
+        let second: A11yId = Id::new("stable-custom-id").into();
+
+        let first_node = accesskit::NodeId::from(first.clone());
+        let second_node = accesskit::NodeId::from(second.clone());
+
+        assert_eq!(first_node, second_node);
+        assert!(IdEq::eq(&first, &A11yId::from(first_node)));
+    }
+
+    #[test]
+    fn window_node_ids_use_a_separate_namespace() {
+        let window_id = accesskit::NodeId(window_node_id());
+
+        assert!(matches!(A11yId::from(window_id), A11yId::Window(_)));
+        assert!(matches!(
+            A11yId::from(accesskit::NodeId(1)),
+            A11yId::Widget(_)
+        ));
     }
 }

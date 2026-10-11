@@ -1,9 +1,13 @@
+use crate::core::backend;
 use crate::futures::futures;
-use crate::graphics;
 
 /// An error that occurred while running an application.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    /// The window event loop could not be run.
+    #[error("the window event loop failed")]
+    EventLoop(#[from] winit::error::EventLoopError),
+
     /// The futures executor could not be created.
     #[error("the futures executor could not be created")]
     ExecutorCreationFailed(futures::io::Error),
@@ -14,15 +18,11 @@ pub enum Error {
 
     /// The application graphics context could not be created.
     #[error("the application graphics context could not be created")]
-    GraphicsCreationFailed(graphics::Error),
-
-    /// There was an event loop error.
-    #[error("there was an event loop error")]
-    EventLoop(winit::error::EventLoopError),
+    GraphicsCreationFailed(backend::Error),
 }
 
-impl From<graphics::Error> for Error {
-    fn from(error: graphics::Error) -> Error {
+impl From<backend::Error> for Error {
+    fn from(error: backend::Error) -> Error {
         Error::GraphicsCreationFailed(error)
     }
 }

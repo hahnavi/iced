@@ -1,7 +1,7 @@
-use iced_wgpu::core::window::Id;
 use iced_wgpu::Renderer;
-use iced_widget::{bottom, column, row, slider, text, text_input};
-use iced_winit::core::{Color, Element, Theme};
+use iced_wgpu::core::window::Id;
+use iced_widget::{Widget, bottom, column, row, slider, text, text_input};
+use iced_winit::core::{Color, Theme};
 
 pub struct Controls {
     background_color: Color,
@@ -39,7 +39,7 @@ impl Controls {
         }
     }
 
-    pub fn view(&self) -> Element<'_, Message, Theme, Renderer> {
+    pub fn view(&self) -> impl Widget<Message, Theme, Renderer> {
         let background_color = self.background_color;
 
         let sliders = row![
@@ -73,12 +73,10 @@ impl Controls {
                 text("Background color").color(Color::WHITE),
                 text!("{background_color:?}").size(14).color(Color::WHITE),
                 sliders,
-                text_input("Type something...", &self.input)
-                    .on_input(Message::InputChanged),
+                text_input("Type something...", &self.input).on_input(Message::InputChanged),
             ]
             .spacing(10),
         )
         .padding(10)
-        .into()
     }
 }

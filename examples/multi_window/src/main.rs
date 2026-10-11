@@ -1,11 +1,8 @@
 use iced::widget::{
-    button, center, center_x, column, container, operation, scrollable, space,
-    text, text_input,
+    Id, button, center, center_x, column, container, operation, scrollable, space, text, text_input,
 };
 use iced::window;
-use iced::{
-    Center, Element, Fill, Function, Subscription, Task, Theme, Vector,
-};
+use iced::{Center, Fill, Function, Subscription, Task, Theme, Vector, Widget};
 
 use std::collections::BTreeMap;
 
@@ -28,7 +25,7 @@ struct Window {
     scale_input: String,
     current_scale: f32,
     theme: Theme,
-    input_id: text_input::Id,
+    input_id: Id,
 }
 
 #[derive(Debug, Clone)]
@@ -69,14 +66,10 @@ impl Example {
 
                 window::position(*last_window)
                     .then(|last_position| {
-                        let position = last_position.map_or(
-                            window::Position::Default,
-                            |last_position| {
-                                window::Position::Specific(
-                                    last_position + Vector::new(20.0, 20.0),
-                                )
-                            },
-                        );
+                        let position =
+                            last_position.map_or(window::Position::Default, |last_position| {
+                                window::Position::Specific(last_position + Vector::new(20.0, 20.0))
+                            });
 
                         let (_, open) = window::open(window::Settings {
                             position,
@@ -131,11 +124,11 @@ impl Example {
         }
     }
 
-    fn view(&self, window_id: window::Id) -> Element<'_, Message> {
+    fn view(&self, window_id: window::Id) -> impl Widget<Message> {
         if let Some(window) = self.windows.get(&window_id) {
-            center(window.view(window_id)).into()
+            center(window.view(window_id)).boxed()
         } else {
-            space().into()
+            space().boxed()
         }
     }
 
@@ -143,10 +136,10 @@ impl Example {
         Some(self.windows.get(&window)?.theme.clone())
     }
 
-    fn scale_factor(&self, window: window::Id) -> f32 {
+    fn scale_factor(&self, window: window::Id) -> f64 {
         self.windows
             .get(&window)
-            .map(|window| window.current_scale)
+            .map(|window| f64::from(window.current_scale))
             .unwrap_or(1.0)
     }
 
@@ -162,19 +155,16 @@ impl Window {
             scale_input: "1.0".to_string(),
             current_scale: 1.0,
             theme: Theme::ALL[count % Theme::ALL.len()].clone(),
-            input_id: text_input::Id::unique(),
+            input_id: Id::unique(),
         }
     }
 
-    fn view(&self, id: window::Id) -> Element<'_, Message> {
+    fn view(&self, id: window::Id) -> impl Widget<Message> {
         let scale_input = column![
             text("Window scale factor:"),
             text_input("Window Scale", &self.scale_input)
                 .on_input(Message::ScaleInputChanged.with(id))
-                .on_submit(Message::ScaleChanged(
-                    id,
-                    self.scale_input.to_string()
-                ))
+                .on_submit(Message::ScaleChanged(id, self.scale_input.to_string()))
         ];
 
         let title_input = column![
@@ -184,8 +174,7 @@ impl Window {
                 .id(format!("input-{id}"))
         ];
 
-        let new_window_button =
-            button(text("New Window")).on_press(Message::OpenWindow);
+        let new_window_button = button(text("New Window")).on_press(Message::OpenWindow);
 
         let content = column![scale_input, title_input, new_window_button]
             .spacing(50)
@@ -193,6 +182,6 @@ impl Window {
             .align_x(Center)
             .width(200);
 
-        container(scrollable(center_x(content))).padding(10).into()
+        container(scrollable(center_x(content))).padding(10)
     }
 }

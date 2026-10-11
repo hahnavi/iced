@@ -4,17 +4,15 @@ mod scene;
 use controls::Controls;
 use scene::Scene;
 
-use iced_wgpu::core::window::Id;
-use iced_wgpu::graphics::Viewport;
 use iced_wgpu::graphics::{Shell, Viewport};
 use iced_wgpu::{Engine, Renderer, wgpu};
-use iced_winit::Clipboard;
 use iced_winit::conversion;
 use iced_winit::core::mouse;
 use iced_winit::core::renderer;
+use iced_winit::core::shell;
 use iced_winit::core::time::Instant;
 use iced_winit::core::window;
-use iced_winit::core::{Event, Font, Pixels, Size, Theme};
+use iced_winit::core::{Event, Size, Theme};
 use iced_winit::futures;
 use iced_winit::runtime::user_interface::{self, UserInterface};
 use iced_winit::winit;
@@ -37,7 +35,7 @@ pub fn main() -> Result<(), winit::error::EventLoopError> {
     enum Runner {
         Loading,
         Ready {
-            window: Arc<winit::window::Window>,
+            window: Arc<dyn winit::window::Window>,
             queue: wgpu::Queue,
             device: wgpu::Device,
             surface: wgpu::Surface<'static>,
@@ -48,7 +46,6 @@ pub fn main() -> Result<(), winit::error::EventLoopError> {
             events: Vec<Event>,
             cursor: mouse::Cursor,
             cache: user_interface::Cache,
-            clipboard: Clipboard,
             viewport: Viewport,
             modifiers: ModifiersState,
             resized: bool,
@@ -56,31 +53,28 @@ pub fn main() -> Result<(), winit::error::EventLoopError> {
     }
 
     impl winit::application::ApplicationHandler for Runner {
-        fn resumed(
-            &mut self,
-            event_loop: &dyn winit::event_loop::ActiveEventLoop,
-        ) {
+        fn can_create_surfaces(&mut self, event_loop: &dyn winit::event_loop::ActiveEventLoop) {
             if let Self::Loading = self {
-                let window = Arc::new(
+                let window: Arc<dyn winit::window::Window> = Arc::from(
                     event_loop
-                        .create_window(
-                            winit::window::WindowAttributes::default(),
-                        )
+                        .create_window(winit::window::WindowAttributes::default())
                         .expect("Create window"),
                 );
 
-                let physical_size = window.inner_size();
+                let physical_size = window.surface_size();
                 let viewport = Viewport::with_physical_size(
                     Size::new(physical_size.width, physical_size.height),
-                    window.scale_factor() as f32,
+                    renderer::Scale {
+                        window: window.scale_factor() as f32,
+                        application: 1.0,
+                    },
                 );
-                let clipboard = Clipboard::connect(window.clone());
 
                 let backend = wgpu::Backends::from_env().unwrap_or_default();
 
-                let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+                let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
                     backends: backend,
-                    ..Default::default()
+                    ..wgpu::InstanceDescriptor::new_without_display_handle()
                 });
                 let surface = instance
                     .create_surface(window.clone())
@@ -88,13 +82,12 @@ pub fn main() -> Result<(), winit::error::EventLoopError> {
 
                 let (format, adapter, device, queue) =
                     futures::futures::executor::block_on(async {
-                        let adapter =
-                            wgpu::util::initialize_adapter_from_env_or_default(
-                                &instance,
-                                Some(&surface),
-                            )
-                            .await
-                            .expect("Create adapter");
+                        let adapter = wgpu::util::initialize_adapter_from_env_or_default(
+                            &instance,
+                            Some(&surface),
+                        )
+                        .await
+                        .expect("Create adapter");
 
                         let adapter_features = adapter.features();
 
@@ -103,13 +96,11 @@ pub fn main() -> Result<(), winit::error::EventLoopError> {
                         let (device, queue) = adapter
                             .request_device(&wgpu::DeviceDescriptor {
                                 label: None,
-                                required_features: adapter_features
-                                    & wgpu::Features::default(),
+                                required_features: adapter_features & wgpu::Features::default(),
                                 required_limits: wgpu::Limits::default(),
                                 memory_hints: wgpu::MemoryHints::MemoryUsage,
                                 trace: wgpu::Trace::Off,
-                                experimental_features:
-                                    wgpu::ExperimentalFeatures::disabled(),
+                                experimental_features: wgpu::ExperimentalFeatures::disabled(),
                             })
                             .await
                             .expect("Request device");
@@ -120,9 +111,7 @@ pub fn main() -> Result<(), winit::error::EventLoopError> {
                                 .iter()
                                 .copied()
                                 .find(wgpu::TextureFormat::is_srgb)
-                                .or_else(|| {
-                                    capabilities.formats.first().copied()
-                                })
+                                .or_else(|| capabilities.formats.first().copied())
                                 .expect("Get preferred format"),
                             adapter,
                             device,
@@ -141,6 +130,7 @@ pub fn main() -> Result<(), winit::error::EventLoopError> {
                         alpha_mode: wgpu::CompositeAlphaMode::Auto,
                         view_formats: vec![],
                         desired_maximum_frame_latency: 2,
+                        color_space: wgpu::SurfaceColorSpace::Auto,
                     },
                 );
 
@@ -160,7 +150,7 @@ pub fn main() -> Result<(), winit::error::EventLoopError> {
                         Shell::headless(),
                     );
 
-                    Renderer::new(engine, Font::default(), Pixels::from(16))
+                    Renderer::new(engine, renderer::Settings::default())
                 };
 
                 // You should change this if you want to render continuously
@@ -179,7 +169,6 @@ pub fn main() -> Result<(), winit::error::EventLoopError> {
                     cursor: mouse::Cursor::Unavailable,
                     modifiers: ModifiersState::default(),
                     cache: user_interface::Cache::new(),
-                    clipboard,
                     viewport,
                     resized: false,
                 };
@@ -205,7 +194,6 @@ pub fn main() -> Result<(), winit::error::EventLoopError> {
                 viewport,
                 cursor,
                 modifiers,
-                clipboard,
                 cache,
                 resized,
             } = self
@@ -213,14 +201,21 @@ pub fn main() -> Result<(), winit::error::EventLoopError> {
                 return;
             };
 
+            // You should wire your own ticker logic if you will use widgets that must
+            // notify the runtime concurrently.
+            let waker = shell::Waker::noop();
+
             match event {
                 WindowEvent::RedrawRequested => {
                     if *resized {
-                        let size = window.inner_size();
+                        let size = window.surface_size();
 
                         *viewport = Viewport::with_physical_size(
                             Size::new(size.width, size.height),
-                            window.scale_factor() as f32,
+                            renderer::Scale {
+                                window: window.scale_factor() as f32,
+                                application: 1.0,
+                            },
                         );
 
                         surface.configure(
@@ -234,6 +229,7 @@ pub fn main() -> Result<(), winit::error::EventLoopError> {
                                 alpha_mode: wgpu::CompositeAlphaMode::Auto,
                                 view_formats: vec![],
                                 desired_maximum_frame_latency: 2,
+                                color_space: wgpu::SurfaceColorSpace::Auto,
                             },
                         );
 
@@ -241,22 +237,20 @@ pub fn main() -> Result<(), winit::error::EventLoopError> {
                     }
 
                     match surface.get_current_texture() {
-                        Ok(frame) => {
-                            let view = frame.texture.create_view(
-                                &wgpu::TextureViewDescriptor::default(),
-                            );
+                        wgpu::CurrentSurfaceTexture::Success(frame) => {
+                            let view = frame
+                                .texture
+                                .create_view(&wgpu::TextureViewDescriptor::default());
 
-                            let mut encoder = device.create_command_encoder(
-                                &wgpu::CommandEncoderDescriptor { label: None },
-                            );
+                            let mut encoder =
+                                device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                                    label: None,
+                                });
 
                             {
                                 // Clear the frame
-                                let mut render_pass = Scene::clear(
-                                    &view,
-                                    &mut encoder,
-                                    controls.background_color(),
-                                );
+                                let mut render_pass =
+                                    Scene::clear(&view, &mut encoder, controls.background_color());
 
                                 // Draw the scene
                                 scene.draw(&mut render_pass);
@@ -274,30 +268,26 @@ pub fn main() -> Result<(), winit::error::EventLoopError> {
                             );
 
                             let (state, _) = interface.update(
+                                window,
+                                &waker,
                                 &[Event::Window(
-                                    window::Event::RedrawRequested(
-                                        Instant::now(),
-                                    ),
+                                    window::Event::RedrawRequested(Instant::now()),
                                 )],
                                 *cursor,
                                 renderer,
-                                clipboard,
-                                &mut Vec::new(),
+                                &mut shell::Bus::new(),
                             );
 
                             // Update the mouse cursor
                             if let user_interface::State::Updated {
-                                mouse_interaction,
-                                ..
+                                mouse_interaction, ..
                             } = state
                             {
                                 // Update the mouse cursor
                                 if let Some(icon) =
-                                    iced_winit::conversion::mouse_interaction(
-                                        mouse_interaction,
-                                    )
+                                    iced_winit::conversion::mouse_interaction(mouse_interaction)
                                 {
-                                    window.set_cursor(icon);
+                                    window.set_cursor(winit::cursor::Cursor::Icon(icon));
                                     window.set_cursor_visible(true);
                                 } else {
                                     window.set_cursor_visible(false);
@@ -313,41 +303,31 @@ pub fn main() -> Result<(), winit::error::EventLoopError> {
                             );
                             *cache = interface.into_cache();
 
-                            renderer.present(
-                                None,
-                                frame.texture.format(),
-                                &view,
-                                viewport,
-                            );
+                            renderer.present(None, frame.texture.format(), &view, viewport);
 
                             // Present the frame
-                            frame.present();
+                            queue.present(frame);
                         }
-                        Err(error) => match error {
-                            wgpu::SurfaceError::OutOfMemory => {
-                                panic!(
-                                    "Swapchain error: {error}. \
-                                        Rendering cannot continue."
-                                )
-                            }
-                            _ => {
-                                // Try rendering again next frame.
-                                window.request_redraw();
-                            }
-                        },
+                        _ => {
+                            // Try rendering again next frame.
+                            window.request_redraw();
+                        }
                     }
                 }
-                WindowEvent::CursorMoved { position, .. } => {
-                    *cursor =
-                        mouse::Cursor::Available(conversion::cursor_position(
-                            position,
-                            viewport.scale_factor(),
-                        ));
+                WindowEvent::PointerMoved {
+                    position,
+                    source: winit::event::PointerSource::Mouse,
+                    ..
+                } => {
+                    *cursor = mouse::Cursor::Available(conversion::cursor_position(
+                        position,
+                        f64::from(viewport.scale_factor()),
+                    ));
                 }
                 WindowEvent::ModifiersChanged(new_modifiers) => {
                     *modifiers = new_modifiers.state();
                 }
-                WindowEvent::Resized(_) => {
+                WindowEvent::SurfaceResized(_) => {
                     *resized = true;
                 }
                 WindowEvent::CloseRequested => {
@@ -357,11 +337,9 @@ pub fn main() -> Result<(), winit::error::EventLoopError> {
             }
 
             // Map window event to iced event
-            if let Some(event) = conversion::window_event(
-                event,
-                window.scale_factor() as f32,
-                *modifiers,
-            ) {
+            if let Some(event) =
+                conversion::window_event(event, window.scale_factor(), *modifiers, window.as_ref())
+            {
                 events.push(event);
             }
 
@@ -375,15 +353,9 @@ pub fn main() -> Result<(), winit::error::EventLoopError> {
                     renderer,
                 );
 
-                let mut messages = Vec::new();
+                let mut messages = shell::Bus::new();
 
-                let _ = interface.update(
-                    events,
-                    *cursor,
-                    renderer,
-                    clipboard,
-                    &mut messages,
-                );
+                let _ = interface.update(window, &waker, events, *cursor, renderer, &mut messages);
 
                 events.clear();
                 *cache = interface.into_cache();
@@ -399,6 +371,5 @@ pub fn main() -> Result<(), winit::error::EventLoopError> {
         }
     }
 
-    let mut runner = Runner::Loading;
-    event_loop.run_app(&mut runner)
+    event_loop.run_app(Runner::Loading)
 }

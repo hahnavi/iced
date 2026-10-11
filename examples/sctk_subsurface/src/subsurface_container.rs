@@ -1,14 +1,13 @@
 //! Distribute content vertically.
 use iced::core::alignment::{self, Alignment};
-use iced::core::event::{self, Event};
+use iced::core::event::Event;
 use iced::core::layout;
 use iced::core::mouse;
 use iced::core::overlay;
 use iced::core::renderer;
-use iced::core::widget::{Operation, Tree};
+use iced::core::widget::{self, tree, Operation, Tree};
 use iced::core::{
-    Clipboard, Element, Layout, Length, Padding, Pixels, Rectangle, Shell,
-    Size, Vector, Widget,
+    Element, Layout, Length, Padding, Pixels, Rectangle, Shell, Size, Vector, Widget,
 };
 
 /// A container that distributes its contents vertically.
@@ -34,12 +33,7 @@ use iced::core::{
 /// }
 /// ```
 #[allow(missing_debug_implementations)]
-pub struct SubsurfaceContainer<
-    'a,
-    Message,
-    Theme = iced::Theme,
-    Renderer = iced::Renderer,
-> {
+pub struct SubsurfaceContainer<'a, Message, Theme = iced::Theme, Renderer = iced::Renderer> {
     spacing: f32,
     padding: Padding,
     width: Length,
@@ -50,8 +44,7 @@ pub struct SubsurfaceContainer<
     children: Vec<Element<'a, Message, Theme, Renderer>>,
 }
 
-impl<'a, Message, Theme, Renderer>
-    SubsurfaceContainer<'a, Message, Theme, Renderer>
+impl<'a, Message, Theme, Renderer> SubsurfaceContainer<'a, Message, Theme, Renderer>
 where
     Renderer: iced::core::Renderer,
 {
@@ -81,9 +74,7 @@ where
     ///
     /// If any of the children have a [`Length::Fill`] strategy, you will need to
     /// call [`SubsurfaceContainer::width`] or [`SubsurfaceContainer::height`] accordingly.
-    pub fn from_vec(
-        children: Vec<Element<'a, Message, Theme, Renderer>>,
-    ) -> Self {
+    pub fn from_vec(children: Vec<Element<'a, Message, Theme, Renderer>>) -> Self {
         Self {
             spacing: 0.0,
             padding: Padding::ZERO,
@@ -144,15 +135,12 @@ where
     }
 
     /// Adds an element to the [`SubsurfaceContainer`].
-    pub fn push(
-        mut self,
-        child: impl Into<Element<'a, Message, Theme, Renderer>>,
-    ) -> Self {
+    pub fn push(mut self, child: impl Into<Element<'a, Message, Theme, Renderer>>) -> Self {
         let child = child.into();
-        let child_size = child.as_widget().size_hint();
+        let child_size = child.size();
 
-        self.width = self.width.enclose(child_size.width);
-        self.height = self.height.enclose(child_size.height);
+        self.width = self.width.cross(child_size.width);
+        self.height = self.height.stack(child_size.height);
 
         self.children.push(child);
         self
@@ -179,8 +167,7 @@ where
     }
 }
 
-impl<'a, Message, Renderer> Default
-    for SubsurfaceContainer<'a, Message, Renderer>
+impl<'a, Message, Renderer> Default for SubsurfaceContainer<'a, Message, Renderer>
 where
     Renderer: iced::core::Renderer,
 {
@@ -189,15 +176,16 @@ where
     }
 }
 
+impl<'a, Message, Theme, Renderer> widget::Meta
+    for SubsurfaceContainer<'a, Message, Theme, Renderer>
+{
+}
+
 impl<'a, Message, Theme, Renderer: iced::core::Renderer>
     FromIterator<Element<'a, Message, Theme, Renderer>>
     for SubsurfaceContainer<'a, Message, Theme, Renderer>
 {
-    fn from_iter<
-        T: IntoIterator<Item = Element<'a, Message, Theme, Renderer>>,
-    >(
-        iter: T,
-    ) -> Self {
+    fn from_iter<T: IntoIterator<Item = Element<'a, Message, Theme, Renderer>>>(iter: T) -> Self {
         Self::with_children(iter)
     }
 }
@@ -207,8 +195,12 @@ impl<'a, Message, Theme, Renderer> Widget<Message, Theme, Renderer>
 where
     Renderer: iced::core::Renderer,
 {
-    fn children(&self) -> Vec<Tree> {
-        self.children.iter().map(Tree::new).collect()
+    fn tag(&self) -> tree::Tag {
+        tree::Tag::of::<layout::flex::Cache>()
+    }
+
+    fn state(&self) -> tree::State {
+        tree::State::new(layout::flex::Cache::default())
     }
 
     fn diff(&mut self, tree: &mut Tree) {
@@ -222,53 +214,44 @@ where
         }
     }
 
-    fn layout(
-        &self,
-        tree: &mut Tree,
-        renderer: &Renderer,
-        limits: &layout::Limits,
-    ) -> layout::Node {
-        let limits = limits.max_width(self.max_width);
-        let nodes = self
-            .children
-            .iter()
-            .zip(tree.children.iter_mut())
-            .map(|c| {
-                let size = c.0.as_widget().size();
-                layout::positioned(
-                    &limits.max_width(self.max_width),
-                    size.width,
-                    size.height,
-                    self.padding,
-                    |limits| c.0.as_widget().layout(c.1, renderer, limits),
-                    |content, size| {
-                        content.align(self.align, Alignment::Start, size)
-                    },
-                )
-            })
-            .collect();
-
-        let size = limits.resolve(self.width, self.height, Size::ZERO);
-
-        layout::Node::with_children(size, nodes)
+    fn layout(&mut self, tree: &mut Tree, renderer: &Renderer, limits: &layout::Limits) {
+        let limits = layout::Limits::with_flags(
+            limits.min,
+            Size::new(limits.max.width.min(self.max_width), limits.max.height),
+            limits.compression,
+            limits.infinite,
+        );
+        let size = layout::flex::resolve(
+            layout::flex::Axis::Vertical,
+            renderer,
+            &limits,
+            self.width,
+            self.height,
+            self.padding,
+            self.spacing,
+            self.align,
+            &mut tree.children,
+            &mut self.children,
+            tree.state.downcast_mut::<layout::flex::Cache>(),
+        );
+        tree.size = size;
     }
 
     fn operate(
-        &self,
+        &mut self,
         tree: &mut Tree,
-        layout: Layout<'_>,
+        layout: Layout,
+        viewport: &Rectangle,
         renderer: &Renderer,
         operation: &mut dyn Operation,
     ) {
-        operation.container(None, layout.bounds(), &mut |operation| {
+        operation.container(None, layout.bounds(), viewport);
+        operation.traverse(&mut |operation| {
             self.children
-                .iter()
-                .zip(&mut tree.children)
-                .zip(layout.children())
-                .for_each(|((child, state), layout)| {
-                    child
-                        .as_widget()
-                        .operate(state, layout, renderer, operation);
+                .iter_mut()
+                .zip(layout.iter_mut(&mut tree.children))
+                .for_each(|(child, (child_layout, state))| {
+                    child.operate(state, child_layout, viewport, renderer, operation);
                 });
         });
     }
@@ -276,49 +259,42 @@ where
     fn update(
         &mut self,
         tree: &mut Tree,
-        event: Event,
-        layout: Layout<'_>,
+        event: &Event,
+        layout: Layout,
         cursor: mouse::Cursor,
         renderer: &Renderer,
-        clipboard: &mut dyn Clipboard,
         shell: &mut Shell<'_, Message>,
         viewport: &Rectangle,
-    ) -> event::Status {
+    ) {
         self.children
             .iter_mut()
-            .zip(&mut tree.children)
-            .zip(layout.children())
-            .map(|((child, state), layout)| {
-                child.as_widget_mut().on_event(
+            .zip(layout.iter_mut(&mut tree.children))
+            .for_each(|(child, (child_layout, state))| {
+                child.update(
                     state,
-                    event.clone(),
-                    layout,
+                    event,
+                    child_layout,
                     cursor,
                     renderer,
-                    clipboard,
                     shell,
                     viewport,
-                )
-            })
-            .fold(event::Status::Ignored, event::Status::merge)
+                );
+            });
     }
 
     fn mouse_interaction(
         &self,
         tree: &Tree,
-        layout: Layout<'_>,
+        layout: Layout,
         cursor: mouse::Cursor,
         viewport: &Rectangle,
         renderer: &Renderer,
     ) -> mouse::Interaction {
         self.children
             .iter()
-            .zip(&tree.children)
-            .zip(layout.children())
-            .map(|((child, state), layout)| {
-                child.as_widget().mouse_interaction(
-                    state, layout, cursor, viewport, renderer,
-                )
+            .zip(layout.iter(&tree.children))
+            .map(|(child, (child_layout, state))| {
+                child.mouse_interaction(state, child_layout, cursor, viewport, renderer)
             })
             .max()
             .unwrap_or_default()
@@ -330,7 +306,7 @@ where
         renderer: &mut Renderer,
         theme: &Theme,
         style: &renderer::Style,
-        layout: Layout<'_>,
+        layout: Layout,
         cursor: mouse::Cursor,
         viewport: &Rectangle,
     ) {
@@ -341,15 +317,20 @@ where
                 viewport
             };
 
-            for ((child, state), layout) in self
+            for (child, (child_layout, state)) in self
                 .children
                 .iter()
-                .zip(&tree.children)
-                .zip(layout.children())
-                .filter(|(_, layout)| layout.bounds().intersects(viewport))
+                .zip(layout.iter(&tree.children))
+                .filter(|(_, (child_layout, _))| child_layout.bounds().intersects(viewport))
             {
-                child.as_widget().draw(
-                    state, renderer, theme, style, layout, cursor, viewport,
+                child.draw(
+                    state,
+                    renderer,
+                    theme,
+                    style,
+                    child_layout,
+                    cursor,
+                    viewport,
                 );
             }
         }
@@ -358,16 +339,20 @@ where
     fn overlay<'b>(
         &'b mut self,
         tree: &'b mut Tree,
-        layout: Layout<'_>,
+        layout: Layout,
         renderer: &Renderer,
+        viewport: &Rectangle,
         translation: Vector,
-    ) -> Option<overlay::Element<'b, Message, Theme, Renderer>> {
+        window: Size,
+    ) -> Vec<overlay::Element<'b, Message, Theme, Renderer>> {
         overlay::from_children(
             &mut self.children,
             tree,
             layout,
             renderer,
+            viewport,
             translation,
+            window,
         )
     }
 
@@ -375,56 +360,41 @@ where
     /// get the a11y nodes for the widget
     fn a11y_nodes(
         &self,
-        layout: Layout<'_>,
+        layout: Layout,
         state: &Tree,
         cursor: mouse::Cursor,
     ) -> iced_accessibility::A11yTree {
         use iced_accessibility::A11yTree;
-        A11yTree::join(
-            self.children
-                .iter()
-                .zip(layout.children())
-                .zip(state.children.iter())
-                .map(|((c, c_layout), state)| {
-                    c.as_widget().a11y_nodes(c_layout, state, cursor)
-                }),
-        )
+        A11yTree::join(self.children.iter().zip(layout.iter(&state.children)).map(
+            |(child, (child_layout, child_state))| {
+                child.a11y_nodes(child_layout, child_state, cursor)
+            },
+        ))
     }
 
     fn drag_destinations(
         &self,
         state: &Tree,
-        layout: Layout<'_>,
+        layout: Layout,
         renderer: &Renderer,
         dnd_rectangles: &mut iced::core::clipboard::DndDestinationRectangles,
     ) {
-        for ((e, layout), state) in self
-            .children
-            .iter()
-            .zip(layout.children())
-            .zip(state.children.iter())
+        for (child, (child_layout, child_state)) in
+            self.children.iter().zip(layout.iter(&state.children))
         {
-            e.as_widget().drag_destinations(
-                state,
-                layout,
-                renderer,
-                dnd_rectangles,
-            );
+            child.drag_destinations(child_state, child_layout, renderer, dnd_rectangles);
         }
     }
 }
 
-impl<'a, Message, Theme, Renderer>
-    From<SubsurfaceContainer<'a, Message, Theme, Renderer>>
+impl<'a, Message, Theme, Renderer> From<SubsurfaceContainer<'a, Message, Theme, Renderer>>
     for Element<'a, Message, Theme, Renderer>
 where
     Message: 'a,
     Theme: 'a,
     Renderer: iced::core::Renderer + 'a,
 {
-    fn from(
-        SubsurfaceContainer: SubsurfaceContainer<'a, Message, Theme, Renderer>,
-    ) -> Self {
+    fn from(SubsurfaceContainer: SubsurfaceContainer<'a, Message, Theme, Renderer>) -> Self {
         Self::new(SubsurfaceContainer)
     }
 }

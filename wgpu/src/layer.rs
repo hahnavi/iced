@@ -1,7 +1,4 @@
-use crate::core::Radians;
-use crate::core::{
-    self, Background, Color, Point, Rectangle, Svg, Transformation, renderer,
-};
+use crate::core::{self, Background, Color, Point, Rectangle, Svg, Transformation, renderer};
 use crate::graphics;
 use crate::graphics::Mesh;
 use crate::graphics::color;
@@ -51,14 +48,11 @@ impl Layer {
             position: [bounds.x, bounds.y],
             size: [bounds.width, bounds.height],
             border_color: color::pack(quad.border.color),
-            border_radius: (quad.border.radius * transformation.scale_factor())
-                .into(),
+            border_radius: (quad.border.radius * transformation.scale_factor()).into(),
             border_width: quad.border.width * transformation.scale_factor(),
             shadow_color: color::pack(quad.shadow.color),
-            shadow_offset: (quad.shadow.offset * transformation.scale_factor())
-                .into(),
-            shadow_blur_radius: quad.shadow.blur_radius
-                * transformation.scale_factor(),
+            shadow_offset: (quad.shadow.offset * transformation.scale_factor()).into(),
+            shadow_blur_radius: quad.shadow.blur_radius * transformation.scale_factor(),
             snap: quad.snap as u32,
         };
 
@@ -116,23 +110,20 @@ impl Layer {
             bounds: Rectangle::new(position, text.bounds) * transformation,
             color,
             size: text.size * transformation.scale_factor(),
-            line_height: text.line_height.to_absolute(text.size)
-                * transformation.scale_factor(),
+            line_height: text.line_height.to_absolute(text.size) * transformation.scale_factor(),
             font: text.font,
             align_x: text.align_x,
             align_y: text.align_y,
             shaping: text.shaping,
+            wrapping: text.wrapping,
+            ellipsis: text.ellipsis,
             clip_bounds: clip_bounds * transformation,
         };
 
         self.pending_text.push(text);
     }
 
-    pub fn draw_text_raw(
-        &mut self,
-        raw: graphics::text::Raw,
-        transformation: Transformation,
-    ) {
+    pub fn draw_text_raw(&mut self, raw: graphics::text::Raw, transformation: Transformation) {
         let raw = Text::Raw {
             raw,
             transformation,
@@ -169,8 +160,7 @@ impl Layer {
     ) {
         let image = Image::Raster {
             image: core::Image {
-                border_radius: image.border_radius
-                    * transformation.scale_factor(),
+                border_radius: image.border_radius * transformation.scale_factor(),
                 ..image
             },
             bounds: bounds * transformation,
@@ -196,11 +186,7 @@ impl Layer {
         self.images.push(svg);
     }
 
-    pub fn draw_mesh(
-        &mut self,
-        mut mesh: Mesh,
-        transformation: Transformation,
-    ) {
+    pub fn draw_mesh(&mut self, mut mesh: Mesh, transformation: Transformation) {
         match &mut mesh {
             Mesh::Solid {
                 transformation: local_transformation,
@@ -217,11 +203,7 @@ impl Layer {
         self.pending_meshes.push(mesh);
     }
 
-    pub fn draw_mesh_group(
-        &mut self,
-        meshes: Vec<Mesh>,
-        transformation: Transformation,
-    ) {
+    pub fn draw_mesh_group(&mut self, meshes: Vec<Mesh>, transformation: Transformation) {
         self.flush_meshes();
 
         self.triangles.push(triangle::Item::Group {
@@ -230,11 +212,7 @@ impl Layer {
         });
     }
 
-    pub fn draw_mesh_cache(
-        &mut self,
-        cache: mesh::Cache,
-        transformation: Transformation,
-    ) {
+    pub fn draw_mesh_cache(&mut self, cache: mesh::Cache, transformation: Transformation) {
         self.flush_meshes();
 
         self.triangles.push(triangle::Item::Cached {
@@ -243,11 +221,7 @@ impl Layer {
         });
     }
 
-    pub fn draw_text_group(
-        &mut self,
-        text: Vec<Text>,
-        transformation: Transformation,
-    ) {
+    pub fn draw_text_group(&mut self, text: Vec<Text>, transformation: Transformation) {
         self.flush_text();
 
         self.text.push(text::Item::Group {
@@ -256,11 +230,7 @@ impl Layer {
         });
     }
 
-    pub fn draw_text_cache(
-        &mut self,
-        cache: text::Cache,
-        transformation: Transformation,
-    ) {
+    pub fn draw_text_cache(&mut self, cache: text::Cache, transformation: Transformation) {
         self.flush_text();
 
         self.text.push(text::Item::Cached {
@@ -281,6 +251,7 @@ impl Layer {
             .push(primitive::Instance::new(bounds, primitive));
     }
 
+    #[allow(clippy::drain_collect)] // We want to reuse `Layer` capacity
     fn flush_meshes(&mut self) {
         if !self.pending_meshes.is_empty() {
             self.triangles.push(triangle::Item::Group {
@@ -290,6 +261,7 @@ impl Layer {
         }
     }
 
+    #[allow(clippy::drain_collect)] // We want to reuse `Layer` capacity
     fn flush_text(&mut self) {
         if !self.pending_text.is_empty() {
             self.text.push(text::Item::Group {

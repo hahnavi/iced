@@ -5,19 +5,14 @@ use iced_runtime::{
     task,
 };
 
-pub fn request_token(
-    app_id: Option<String>,
-    window: Option<SurfaceId>,
-) -> Task<Option<String>> {
+pub fn request_token(app_id: Option<String>, window: Option<SurfaceId>) -> Task<Option<String>> {
     task::oneshot(|channel| {
         Action::PlatformSpecific(platform_specific::Action::Wayland(
-            wayland::Action::Activation(
-                wayland::activation::Action::RequestToken {
-                    app_id,
-                    window,
-                    channel,
-                },
-            ),
+            wayland::Action::Activation(wayland::activation::Action::RequestToken {
+                app_id,
+                window,
+                channel,
+            }),
         ))
     })
 }

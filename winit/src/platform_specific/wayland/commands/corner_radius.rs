@@ -8,10 +8,7 @@ use iced_runtime::{
     task,
 };
 
-pub fn corner_radius(
-    id: window::Id,
-    corners: Option<CornerRadius>,
-) -> Task<()> {
+pub fn corner_radius(id: window::Id, corners: Option<CornerRadius>) -> Task<()> {
     task::oneshot(|_| {
         Action::PlatformSpecific(platform_specific::Action::Wayland(
             wayland::Action::RoundedCorners(id, corners),

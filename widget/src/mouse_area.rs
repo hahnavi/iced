@@ -8,20 +8,12 @@ use crate::core::mouse;
 use crate::core::overlay;
 use crate::core::renderer;
 use crate::core::touch;
-use crate::core::widget::{Operation, Tree, tree};
-use crate::core::{
-    Clipboard, Element, Event, Layout, Length, Point, Rectangle, Shell, Size,
-    Vector, Widget,
-};
+use crate::core::widget::{Meta, Operation, Tree, tree};
+use crate::core::{Event, Layout, Length, Point, Rectangle, Shell, Size, Vector, Widget};
 
 /// Emit messages on mouse events.
-pub struct MouseArea<
-    'a,
-    Message,
-    Theme = crate::Theme,
-    Renderer = crate::Renderer,
-> {
-    content: Element<'a, Message, Theme, Renderer>,
+pub struct MouseArea<'a, Message, W = crate::Element<'a, Message>> {
+    content: W,
     on_drag: Option<Message>,
     on_press: Option<Message>,
     on_double_press: Option<Message>,
@@ -38,7 +30,7 @@ pub struct MouseArea<
     interaction: Option<mouse::Interaction>,
 }
 
-impl<'a, Message, Theme, Renderer> MouseArea<'a, Message, Theme, Renderer> {
+impl<'a, Message, W> MouseArea<'a, Message, W> {
     /// The message to emit when a drag is initiated.
     #[must_use]
     pub fn on_drag(mut self, message: Message) -> Self {
@@ -112,10 +104,7 @@ impl<'a, Message, Theme, Renderer> MouseArea<'a, Message, Theme, Renderer> {
 
     /// The message to emit when scroll wheel is used
     #[must_use]
-    pub fn on_scroll(
-        mut self,
-        on_scroll: impl Fn(mouse::ScrollDelta) -> Message + 'a,
-    ) -> Self {
+    pub fn on_scroll(mut self, on_scroll: impl Fn(mouse::ScrollDelta) -> Message + 'a) -> Self {
         self.on_scroll = Some(Box::new(on_scroll));
         self
     }
@@ -174,13 +163,11 @@ impl Default for State {
     }
 }
 
-impl<'a, Message, Theme, Renderer> MouseArea<'a, Message, Theme, Renderer> {
+impl<'a, Message, W> MouseArea<'a, Message, W> {
     /// Creates a [`MouseArea`] with the given content.
-    pub fn new(
-        content: impl Into<Element<'a, Message, Theme, Renderer>>,
-    ) -> Self {
+    pub fn new(content: W) -> Self {
         MouseArea {
-            content: content.into(),
+            content,
             on_drag: None,
             on_press: None,
             on_double_press: None,
@@ -199,11 +186,13 @@ impl<'a, Message, Theme, Renderer> MouseArea<'a, Message, Theme, Renderer> {
     }
 }
 
-impl<Message, Theme, Renderer> Widget<Message, Theme, Renderer>
-    for MouseArea<'_, Message, Theme, Renderer>
+impl<Message, W> Meta for MouseArea<'_, Message, W> {}
+
+impl<Message, W, Theme, Renderer> Widget<Message, Theme, Renderer> for MouseArea<'_, Message, W>
 where
     Renderer: renderer::Renderer,
     Message: Clone,
+    W: Widget<Message, Theme, Renderer>,
 {
     fn tag(&self) -> tree::Tag {
         tree::Tag::of::<State>()
@@ -213,64 +202,48 @@ where
         tree::State::new(State::default())
     }
 
-    fn children(&self) -> Vec<Tree> {
-        vec![Tree::new(&self.content)]
-    }
-
     fn diff(&mut self, tree: &mut Tree) {
         tree.diff_children(std::slice::from_mut(&mut self.content));
     }
 
     fn size(&self) -> Size<Length> {
-        self.content.as_widget().size()
+        self.content.size()
     }
 
-    fn layout(
-        &mut self,
-        tree: &mut Tree,
-        renderer: &Renderer,
-        limits: &layout::Limits,
-    ) -> layout::Node {
-        self.content.as_widget_mut().layout(
-            &mut tree.children[0],
-            renderer,
-            limits,
-        )
+    fn layout(&mut self, tree: &mut Tree, renderer: &Renderer, limits: &layout::Limits) {
+        self.content.layout(&mut tree.children[0], renderer, limits);
+
+        tree.size = tree.children[0].size;
     }
 
     fn operate(
         &mut self,
         tree: &mut Tree,
-        layout: Layout<'_>,
+        layout: Layout,
+        viewport: &Rectangle,
         renderer: &Renderer,
         operation: &mut dyn Operation,
     ) {
-        self.content.as_widget_mut().operate(
-            &mut tree.children[0],
-            layout,
-            renderer,
-            operation,
-        );
+        self.content
+            .operate(&mut tree.children[0], layout, viewport, renderer, operation);
     }
 
     fn update(
         &mut self,
         tree: &mut Tree,
         event: &Event,
-        layout: Layout<'_>,
+        layout: Layout,
         cursor: mouse::Cursor,
         renderer: &Renderer,
-        clipboard: &mut dyn Clipboard,
         shell: &mut Shell<'_, Message>,
         viewport: &Rectangle,
     ) {
-        self.content.as_widget_mut().update(
+        self.content.update(
             &mut tree.children[0],
             event,
             layout,
             cursor,
             renderer,
-            clipboard,
             shell,
             viewport,
         );
@@ -285,23 +258,17 @@ where
     fn mouse_interaction(
         &self,
         tree: &Tree,
-        layout: Layout<'_>,
+        layout: Layout,
         cursor: mouse::Cursor,
         viewport: &Rectangle,
         renderer: &Renderer,
     ) -> mouse::Interaction {
-        let content_interaction = self.content.as_widget().mouse_interaction(
-            &tree.children[0],
-            layout,
-            cursor,
-            viewport,
-            renderer,
-        );
+        let content_interaction =
+            self.content
+                .mouse_interaction(&tree.children[0], layout, cursor, viewport, renderer);
 
         match (self.interaction, content_interaction) {
-            (Some(interaction), mouse::Interaction::None)
-                if cursor.is_over(layout.bounds()) =>
-            {
+            (Some(interaction), mouse::Interaction::None) if cursor.is_over(layout.bounds()) => {
                 interaction
             }
             _ => content_interaction,
@@ -314,11 +281,11 @@ where
         renderer: &mut Renderer,
         theme: &Theme,
         renderer_style: &renderer::Style,
-        layout: Layout<'_>,
+        layout: Layout,
         cursor: mouse::Cursor,
         viewport: &Rectangle,
     ) {
-        self.content.as_widget().draw(
+        self.content.draw(
             &tree.children[0],
             renderer,
             theme,
@@ -331,75 +298,57 @@ where
     fn overlay<'b>(
         &'b mut self,
         tree: &'b mut Tree,
-        layout: Layout<'b>,
+        layout: Layout,
         renderer: &Renderer,
         viewport: &Rectangle,
         translation: Vector,
-    ) -> Option<overlay::Element<'b, Message, Theme, Renderer>> {
-        self.content.as_widget_mut().overlay(
+        window: Size,
+    ) -> Vec<overlay::Element<'b, Message, Theme, Renderer>> {
+        self.content.overlay(
             &mut tree.children[0],
             layout,
             renderer,
             viewport,
             translation,
+            window,
         )
     }
     fn drag_destinations(
         &self,
         state: &Tree,
-        layout: Layout<'_>,
+        layout: Layout,
         renderer: &Renderer,
         dnd_rectangles: &mut crate::core::clipboard::DndDestinationRectangles,
     ) {
         if let Some(state) = state.children.first() {
-            self.content.as_widget().drag_destinations(
-                state,
-                layout,
-                renderer,
-                dnd_rectangles,
-            );
+            self.content
+                .drag_destinations(state, layout, renderer, dnd_rectangles);
         }
     }
 
     #[cfg(feature = "a11y")]
     fn a11y_nodes(
         &self,
-        layout: Layout<'_>,
+        layout: Layout,
         state: &Tree,
         cursor: mouse::Cursor,
     ) -> iced_accessibility::A11yTree {
         let c_state = state.children.get(0);
 
-        let ret = self.content.as_widget().a11y_nodes(
-            layout,
-            c_state.unwrap_or(&Tree::empty()),
-            cursor,
-        );
+        let ret = self
+            .content
+            .a11y_nodes(layout, c_state.unwrap_or(&Tree::empty()), cursor);
         return ret;
-    }
-}
-
-impl<'a, Message, Theme, Renderer> From<MouseArea<'a, Message, Theme, Renderer>>
-    for Element<'a, Message, Theme, Renderer>
-where
-    Message: 'a + Clone,
-    Theme: 'a,
-    Renderer: 'a + renderer::Renderer,
-{
-    fn from(
-        area: MouseArea<'a, Message, Theme, Renderer>,
-    ) -> Element<'a, Message, Theme, Renderer> {
-        Element::new(area)
     }
 }
 
 /// Processes the given [`Event`] and updates the [`State`] of an [`MouseArea`]
 /// accordingly.
-fn update<Message: Clone, Theme, Renderer>(
-    widget: &mut MouseArea<'_, Message, Theme, Renderer>,
+fn update<Message: Clone, W>(
+    widget: &mut MouseArea<'_, Message, W>,
     tree: &mut Tree,
     event: &Event,
-    layout: Layout<'_>,
+    layout: Layout,
     cursor: mouse::Cursor,
     shell: &mut Shell<'_, Message>,
 ) {
@@ -467,16 +416,21 @@ fn update<Message: Clone, Theme, Renderer>(
     | Event::Touch(touch::Event::FingerPressed { .. }) = event
     {
         if let Some(position) = cursor_position {
-            let new_click = mouse::Click::new(
-                position,
-                mouse::Button::Left,
-                state.last_press,
-            );
+            let new_click = mouse::Click::new(position, mouse::Button::Left, state.last_press);
             if new_click.kind() == mouse::click::Kind::Double
                 && let Some(double_press) = widget.on_double_press.as_ref()
             {
-                state.drag_initiated = None;
-                shell.publish(double_press.clone());
+                let new_click =
+                    mouse::Click::new(position, mouse::Button::Left, state.previous_click);
+
+                if new_click.kind() == mouse::click::Kind::Double {
+                    shell.publish(double_press.clone());
+                }
+
+                state.previous_click = Some(new_click);
+
+                // Even if this is not a double click, but the press is nevertheless
+                // processed by us and should not be popup to parent widgets.
                 shell.capture_event();
                 state.last_press = Some(new_click);
                 return;
@@ -497,11 +451,7 @@ fn update<Message: Clone, Theme, Renderer>(
     {
         state.drag_initiated = None;
         if let Some(position) = cursor_position {
-            let new_click = mouse::Click::new(
-                position,
-                mouse::Button::Left,
-                state.previous_click,
-            );
+            let new_click = mouse::Click::new(position, mouse::Button::Left, state.previous_click);
             if new_click.kind() == mouse::click::Kind::Double
                 && let Some(double_press) = widget.on_double_click.as_ref()
             {
@@ -561,8 +511,7 @@ fn update<Message: Clone, Theme, Renderer>(
         }
     }
 
-    if let Some(message) = widget.on_enter.as_ref().or(widget.on_exit.as_ref())
-    {
+    if let Some(message) = widget.on_enter.as_ref().or(widget.on_exit.as_ref()) {
         if let Event::Mouse(mouse::Event::CursorMoved { .. }) = event {
             if state.is_out_of_bounds {
                 state.is_out_of_bounds = false;
@@ -582,9 +531,7 @@ fn update<Message: Clone, Theme, Renderer>(
         {
             state.drag_initiated = cursor.position();
         }
-    } else if let Some((message, drag_source)) =
-        widget.on_drag.as_ref().zip(state.drag_initiated)
-    {
+    } else if let Some((message, drag_source)) = widget.on_drag.as_ref().zip(state.drag_initiated) {
         if let Some(position) = cursor.position() {
             if position.distance(drag_source) > 1.0 {
                 state.drag_initiated = None;

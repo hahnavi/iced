@@ -3,7 +3,7 @@
 //! # Example
 //! ```no_run
 //! # mod iced { pub mod widget { pub use iced_widget::*; } pub use iced_widget::Renderer; pub use iced_widget::core::*; }
-//! # pub type Element<'a, Message> = iced_widget::core::Element<'a, Message, iced_widget::Theme, iced_widget::Renderer>;
+//! # use iced::widget::Widget;
 //! #
 //! use iced::widget::slider;
 //!
@@ -16,8 +16,8 @@
 //!     ValueChanged(f32),
 //! }
 //!
-//! fn view(state: &State) -> Element<'_, Message> {
-//!     slider(0.0..=100.0, state.value, Message::ValueChanged).into()
+//! fn view(state: &State) -> impl Widget<Message> {
+//!     slider(0.0..=100.0, state.value, Message::ValueChanged)
 //! }
 //!
 //! fn update(state: &mut State, message: Message) {
@@ -35,14 +35,15 @@ use crate::core::layout;
 use crate::core::mouse;
 use crate::core::renderer;
 use crate::core::touch;
-use crate::core::widget::Id;
 use crate::core::widget::tree::{self, Tree};
+use crate::core::widget::{Id, Meta};
 use crate::core::window;
 use crate::core::{
-    self, Background, Clipboard, Color, Element, Event, Layout, Length, Pixels,
-    Point, Rectangle, Shell, Size, Theme, Widget,
+    self, Background, Color, Event, Layout, Length, Pixels, Point, Rectangle, Shell, Size, Theme,
+    Widget,
 };
 
+use num_traits::AsPrimitive;
 use std::ops::RangeInclusive;
 
 use iced_renderer::core::border::Radius;
@@ -59,10 +60,14 @@ use std::borrow::Cow;
 /// The [`Slider`] range of numeric values is generic and its step size defaults
 /// to 1 unit.
 ///
+/// Note: Under the hood values are converted to/from f64 so only values representable exactly as an f64
+/// are possible to select via the slider. However it is likely that the precision of the slider at these
+/// scales is already less than the precision lost from the f64 representation.
+///
 /// # Example
 /// ```no_run
 /// # mod iced { pub mod widget { pub use iced_widget::*; } pub use iced_widget::Renderer; pub use iced_widget::core::*; }
-/// # pub type Element<'a, Message> = iced_widget::core::Element<'a, Message, iced_widget::Theme, iced_widget::Renderer>;
+/// # use iced::widget::Widget;
 /// #
 /// use iced::widget::slider;
 ///
@@ -75,8 +80,8 @@ use std::borrow::Cow;
 ///     ValueChanged(f32),
 /// }
 ///
-/// fn view(state: &State) -> Element<'_, Message> {
-///     slider(0.0..=100.0, state.value, Message::ValueChanged).into()
+/// fn view(state: &State) -> impl Widget<Message> {
+///     slider(0.0..=100.0, state.value, Message::ValueChanged)
 /// }
 ///
 /// fn update(state: &mut State, message: Message) {
@@ -99,8 +104,8 @@ where
     #[cfg(feature = "a11y")]
     label: Option<Vec<iced_accessibility::accesskit::NodeId>>,
     range: RangeInclusive<T>,
-    step: T,
-    shift_step: Option<T>,
+    step: f64,
+    shift_step: Option<f64>,
     value: T,
     default: Option<T>,
     breakpoints: &'a [T],
@@ -116,7 +121,7 @@ where
 
 impl<'a, T, Message, Theme> Slider<'a, T, Message, Theme>
 where
-    T: Copy + From<u8> + PartialOrd,
+    T: Copy + PartialOrd,
     Message: Clone,
     Theme: Catalog,
 {
@@ -164,7 +169,7 @@ where
             value,
             default: None,
             range,
-            step: T::from(1),
+            step: 1.0,
             shift_step: None,
             breakpoints: &[],
             on_change: Box::new(on_change),
@@ -236,16 +241,16 @@ where
     }
 
     /// Sets the step size of the [`Slider`].
-    pub fn step(mut self, step: impl Into<T>) -> Self {
-        self.step = step.into();
+    pub fn step(mut self, step: impl num_traits::AsPrimitive<f64>) -> Self {
+        self.step = step.as_();
         self
     }
 
     /// Sets the optional "shift" step for the [`Slider`].
     ///
     /// If set, this value is used as the step while the shift key is pressed.
-    pub fn shift_step(mut self, shift_step: impl Into<T>) -> Self {
-        self.shift_step = Some(shift_step.into());
+    pub fn shift_step(mut self, shift_step: impl num_traits::AsPrimitive<f64>) -> Self {
+        self.shift_step = Some(shift_step.as_());
         self
     }
 
@@ -276,10 +281,7 @@ where
 
     #[cfg(feature = "a11y")]
     /// Sets the description of the [`Slider`].
-    pub fn description_widget(
-        mut self,
-        description: &impl iced_accessibility::Describes,
-    ) -> Self {
+    pub fn description_widget(mut self, description: &impl iced_accessibility::Describes) -> Self {
         self.description = Some(iced_accessibility::Description::Id(
             description.description(),
         ));
@@ -289,24 +291,23 @@ where
     #[cfg(feature = "a11y")]
     /// Sets the description of the [`Slider`].
     pub fn description(mut self, description: impl Into<Cow<'a, str>>) -> Self {
-        self.description =
-            Some(iced_accessibility::Description::Text(description.into()));
+        self.description = Some(iced_accessibility::Description::Text(description.into()));
         self
     }
 
     #[cfg(feature = "a11y")]
     /// Sets the label of the [`Slider`].
     pub fn label(mut self, label: &dyn iced_accessibility::Labels) -> Self {
-        self.label =
-            Some(label.label().into_iter().map(|l| l.into()).collect());
+        self.label = Some(label.label().into_iter().map(|l| l.into()).collect());
         self
     }
 }
 
-impl<T, Message, Theme, Renderer> Widget<Message, Theme, Renderer>
-    for Slider<'_, T, Message, Theme>
+impl<T, Message, Theme> Meta for Slider<'_, T, Message, Theme> where Theme: Catalog {}
+
+impl<T, Message, Theme, Renderer> Widget<Message, Theme, Renderer> for Slider<'_, T, Message, Theme>
 where
-    T: Copy + Into<f64> + num_traits::FromPrimitive,
+    T: Copy + num_traits::AsPrimitive<f64> + num_traits::FromPrimitive,
     Message: Clone,
     Theme: Catalog,
     Renderer: core::Renderer,
@@ -322,27 +323,21 @@ where
     fn size(&self) -> Size<Length> {
         Size {
             width: self.width,
-            height: Length::Shrink,
+            height: Length::Fit,
         }
     }
 
-    fn layout(
-        &mut self,
-        _tree: &mut Tree,
-        _renderer: &Renderer,
-        limits: &layout::Limits,
-    ) -> layout::Node {
-        layout::atomic(limits, self.width, self.height)
+    fn layout(&mut self, tree: &mut Tree, _renderer: &Renderer, limits: &layout::Limits) {
+        tree.size = layout::atomic(limits, self.width, self.height);
     }
 
     fn update(
         &mut self,
         tree: &mut Tree,
         event: &Event,
-        layout: Layout<'_>,
+        layout: Layout,
         cursor: mouse::Cursor,
         _renderer: &Renderer,
-        _clipboard: &mut dyn Clipboard,
         shell: &mut Shell<'_, Message>,
         viewport: &Rectangle,
     ) {
@@ -370,14 +365,12 @@ where
                         self.shift_step.unwrap_or(self.step)
                     } else {
                         self.step
-                    }
-                    .into();
+                    };
 
-                    let start = (*self.range.start()).into();
-                    let end = (*self.range.end()).into();
+                    let start = (*self.range.start()).as_();
+                    let end = (*self.range.end()).as_();
 
-                    let percent = f64::from(cursor_position.x - bounds.x)
-                        / f64::from(bounds.width);
+                    let percent = f64::from(cursor_position.x - bounds.x) / f64::from(bounds.width);
 
                     let steps = (percent * (end - start) / step).round();
                     let value = steps * step + start;
@@ -391,13 +384,12 @@ where
                     self.shift_step.unwrap_or(self.step)
                 } else {
                     self.step
-                }
-                .into();
+                };
 
-                let steps = (value.into() / step).round();
+                let steps = (value.as_() / step).round();
                 let new_value = step * (steps + 1.0);
 
-                if new_value > (*self.range.end()).into() {
+                if new_value > (*self.range.end()).as_() {
                     return Some(*self.range.end());
                 }
 
@@ -409,13 +401,12 @@ where
                     self.shift_step.unwrap_or(self.step)
                 } else {
                     self.step
-                }
-                .into();
+                };
 
-                let steps = (value.into() / step).round();
+                let steps = (value.as_() / step).round();
                 let new_value = step * (steps - 1.0);
 
-                if new_value < (*self.range.start()).into() {
+                if new_value < (*self.range.start()).as_() {
                     return Some(*self.range.start());
                 }
 
@@ -423,7 +414,7 @@ where
             };
 
             let change = |new_value: T| {
-                if (self.value.into() - new_value.into()).abs() > f64::EPSILON {
+                if (self.value.as_() - new_value.as_()).abs() > f64::EPSILON {
                     shell.publish((self.on_change)(new_value));
 
                     self.value = new_value;
@@ -431,13 +422,9 @@ where
             };
 
             match &event {
-                Event::Mouse(mouse::Event::ButtonPressed(
-                    mouse::Button::Left,
-                ))
+                Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left))
                 | Event::Touch(touch::Event::FingerPressed { .. }) => {
-                    if let Some(cursor_position) =
-                        cursor.position_over(layout.bounds())
-                    {
+                    if let Some(cursor_position) = cursor.position_over(layout.bounds()) {
                         if state.keyboard_modifiers.command() {
                             let _ = self.default.map(change);
                             state.is_dragging = false;
@@ -449,77 +436,87 @@ where
                         shell.capture_event();
                     }
                 }
-                Event::Mouse(mouse::Event::ButtonReleased(
-                    mouse::Button::Left,
-                ))
-                | Event::Mouse(mouse::Event::CursorLeft)
-                | Event::Mouse(mouse::Event::CursorEntered)
+                Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left))
                 | Event::Touch(touch::Event::FingerLifted { .. })
-                | Event::Touch(touch::Event::FingerLost { .. }) => {
-                    if state.is_dragging {
-                        if let Some(on_release) = self.on_release.clone() {
-                            shell.publish(on_release);
-                        }
-                        state.is_dragging = false;
+                | Event::Touch(touch::Event::FingerLost { .. })
+                    if state.is_dragging =>
+                {
+                    if let Some(on_release) = self.on_release.clone() {
+                        shell.publish(on_release);
                     }
+                    state.is_dragging = false;
                 }
                 Event::Mouse(mouse::Event::CursorMoved { .. })
-                | Event::Touch(touch::Event::FingerMoved { .. }) => {
-                    if state.is_dragging {
-                        let position = cursor.land().position();
-                        let outside = position.is_none_or(|position| {
-                            !viewport.contains(position)
-                        });
+                | Event::Touch(touch::Event::FingerMoved { .. })
+                    if state.is_dragging =>
+                {
+                    let _ = cursor.observe().position().and_then(locate).map(change);
 
-                        if outside {
-                            if let Some(on_release) = self.on_release.clone() {
-                                shell.publish(on_release);
-                            }
-                            state.is_dragging = false;
-                        } else {
-                            let _ = position.and_then(locate).map(change);
-                            shell.capture_event();
-                        }
-                    }
+                    shell.capture_event();
                 }
                 Event::Mouse(mouse::Event::WheelScrolled { delta })
-                    if state.keyboard_modifiers.control() =>
+                    if state.keyboard_modifiers.control() && cursor.is_over(layout.bounds()) =>
                 {
-                    if cursor.is_over(layout.bounds()) {
-                        let delta = match delta {
-                            mouse::ScrollDelta::Lines { x: _, y } => y,
-                            mouse::ScrollDelta::Pixels { x: _, y } => y,
-                        };
+                    let delta = match delta {
+                        mouse::ScrollDelta::Lines { x: _, y } => y,
+                        mouse::ScrollDelta::Pixels { x: _, y } => y,
+                    };
 
-                        if *delta < 0.0 {
-                            let _ = decrement(current_value).map(change);
-                        } else {
+                    if *delta < 0.0 {
+                        let _ = decrement(current_value).map(change);
+                    } else {
+                        let _ = increment(current_value).map(change);
+                    }
+
+                    shell.capture_event();
+                }
+                #[cfg(feature = "a11y")]
+                Event::A11y(
+                    event_id,
+                    iced_accessibility::accesskit::ActionRequest { action, data, .. },
+                ) if iced_accessibility::IdEq::eq(
+                    &iced_accessibility::A11yId::from(self.id.clone()),
+                    event_id,
+                ) =>
+                {
+                    use iced_accessibility::accesskit::{Action, ActionData};
+
+                    match action {
+                        Action::Increment => {
                             let _ = increment(current_value).map(change);
                         }
-
-                        shell.capture_event();
-                    }
-                }
-                Event::Keyboard(keyboard::Event::KeyPressed {
-                    key, ..
-                }) => {
-                    if cursor.is_over(layout.bounds()) {
-                        match key {
-                            Key::Named(key::Named::ArrowUp) => {
-                                let _ = increment(current_value).map(change);
-                                shell.capture_event();
-                            }
-                            Key::Named(key::Named::ArrowDown) => {
-                                let _ = decrement(current_value).map(change);
-                                shell.capture_event();
-                            }
-                            _ => (),
+                        Action::Decrement => {
+                            let _ = decrement(current_value).map(change);
                         }
+                        Action::SetValue => {
+                            if let Some(ActionData::NumericValue(value)) = data {
+                                let min = (*self.range.start()).as_();
+                                let max = (*self.range.end()).as_();
+                                let value = value.clamp(min, max);
+                                let _ = T::from_f64(value).map(change);
+                            }
+                        }
+                        _ => {}
+                    }
+
+                    shell.capture_event();
+                }
+                Event::Keyboard(keyboard::Event::KeyPressed { key, .. })
+                    if cursor.is_over(layout.bounds()) =>
+                {
+                    match key {
+                        Key::Named(key::Named::ArrowUp) => {
+                            let _ = increment(current_value).map(change);
+                            shell.capture_event();
+                        }
+                        Key::Named(key::Named::ArrowDown) => {
+                            let _ = decrement(current_value).map(change);
+                            shell.capture_event();
+                        }
+                        _ => (),
                     }
                 }
-                Event::Keyboard(keyboard::Event::ModifiersChanged(
-                    modifiers,
-                )) => {
+                Event::Keyboard(keyboard::Event::ModifiersChanged(modifiers)) => {
                     state.keyboard_modifiers = *modifiers;
                 }
                 _ => {}
@@ -549,7 +546,7 @@ where
         renderer: &mut Renderer,
         theme: &Theme,
         _style: &renderer::Style,
-        layout: Layout<'_>,
+        layout: Layout,
         _cursor: mouse::Cursor,
         _viewport: &Rectangle,
     ) {
@@ -559,35 +556,28 @@ where
             ..layout.bounds()
         };
 
-        let style =
-            theme.style(&self.class, self.status.unwrap_or(Status::Active));
+        let style = theme.style(&self.class, self.status.unwrap_or(Status::Active));
 
-        let (mut handle_width, mut handle_height, handle_border_radius) =
-            match style.handle.shape {
-                HandleShape::Circle { radius } => {
-                    (radius * 2.0, radius * 2.0, Radius::from(radius))
-                }
-                HandleShape::Rectangle {
-                    height,
-                    width,
-                    border_radius,
-                } => (f32::from(width), f32::from(height), border_radius),
-            };
+        let (handle_width, handle_height, handle_border_radius) = match style.handle.shape {
+            HandleShape::Circle { radius } => (radius * 2.0, radius * 2.0, radius.into()),
+            HandleShape::Rectangle {
+                width,
+                height,
+                border_radius,
+            } => (f32::from(width), f32::from(height), border_radius),
+        };
 
-        handle_width = handle_width.min(self.handle_width);
-        handle_height = handle_height.min(self.handle_height);
-
-        let value = self.value.into() as f32;
+        let value = self.value.as_() as f32;
         let (range_start, range_end) = {
             let (start, end) = self.range.clone().into_inner();
 
-            (start.into() as f32, end.into() as f32)
+            (start.as_() as f32, end.as_() as f32)
         };
 
         let offset = if range_start >= range_end {
             0.0
         } else {
-            bounds.width * (value - range_start) / (range_end - range_start)
+            (bounds.width - handle_width) * (value - range_start) / (range_end - range_start)
         };
 
         let rail_y = bounds.y + bounds.height / 2.0;
@@ -595,7 +585,7 @@ where
         // Draw the breakpoint indicators beneath the slider.
         const BREAKPOINT_WIDTH: f32 = 2.0;
         for &value in self.breakpoints {
-            let value: f64 = value.into();
+            let value: f64 = value.as_();
             let offset = if range_start >= range_end {
                 0.0
             } else {
@@ -609,8 +599,7 @@ where
                         x: bounds.x + offset,
                         y: rail_y + 6.0,
                         width: BREAKPOINT_WIDTH,
-                        height: 8.0_f32
-                            .min(bounds.y + bounds.height - (rail_y + 6.0)),
+                        height: 8.0_f32.min(bounds.y + bounds.height - (rail_y + 6.0)),
                     },
                     border: Border {
                         radius: 0.0.into(),
@@ -676,7 +665,7 @@ where
     fn mouse_interaction(
         &self,
         tree: &Tree,
-        layout: Layout<'_>,
+        layout: Layout,
         cursor: mouse::Cursor,
         _viewport: &Rectangle,
         _renderer: &Renderer,
@@ -705,7 +694,7 @@ where
     #[cfg(feature = "a11y")]
     fn a11y_nodes(
         &self,
-        layout: Layout<'_>,
+        layout: Layout,
         _state: &Tree,
         cursor: mouse::Cursor,
     ) -> iced_accessibility::A11yTree {
@@ -722,13 +711,11 @@ where
             width,
             height,
         } = bounds;
-        let bounds = Rect::new(
-            x as f64,
-            y as f64,
-            (x + width) as f64,
-            (y + height) as f64,
-        );
+        let bounds = Rect::new(x as f64, y as f64, (x + width) as f64, (y + height) as f64);
         let mut node = Node::new(Role::Slider);
+        node.add_action(iced_accessibility::accesskit::Action::Increment);
+        node.add_action(iced_accessibility::accesskit::Action::Decrement);
+        node.add_action(iced_accessibility::accesskit::Action::SetValue);
         node.set_bounds(bounds);
         if let Some(name) = self.name.as_ref() {
             node.set_label(name.clone());
@@ -752,18 +739,13 @@ where
             node.set_labelled_by(label.clone());
         }
 
-        if let Ok(min) = self.range.start().clone().try_into() {
-            node.set_min_numeric_value(min);
-        }
-        if let Ok(max) = self.range.end().clone().try_into() {
-            node.set_max_numeric_value(max);
-        }
-        if let Ok(value) = self.value.clone().try_into() {
-            node.set_numeric_value(value);
-        }
-        if let Ok(step) = self.step.clone().try_into() {
-            node.set_numeric_value_step(step);
-        }
+        let min: f64 = self.range.start().as_();
+        let max: f64 = self.range.end().as_();
+        let value: f64 = self.value.as_();
+        node.set_min_numeric_value(min);
+        node.set_max_numeric_value(max);
+        node.set_numeric_value(value);
+        node.set_numeric_value_step(self.step);
 
         // TODO: This could be a setting on the slider
         node.set_live(iced_accessibility::accesskit::Live::Polite);
@@ -777,21 +759,6 @@ where
 
     fn set_id(&mut self, id: Id) {
         self.id = id;
-    }
-}
-
-impl<'a, T, Message, Theme, Renderer> From<Slider<'a, T, Message, Theme>>
-    for Element<'a, Message, Theme, Renderer>
-where
-    T: Copy + Into<f64> + num_traits::FromPrimitive + 'a,
-    Message: Clone + 'a,
-    Theme: Catalog + 'a,
-    Renderer: core::Renderer + 'a,
-{
-    fn from(
-        slider: Slider<'a, T, Message, Theme>,
-    ) -> Element<'a, Message, Theme, Renderer> {
-        Element::new(slider)
     }
 }
 
@@ -928,7 +895,7 @@ impl Catalog for Theme {
 
 /// The default style of a [`Slider`].
 pub fn default(theme: &Theme, status: Status) -> Style {
-    let palette = theme.extended_palette();
+    let palette = theme.palette();
 
     let color = match status {
         Status::Active => palette.primary.base.color,

@@ -7,13 +7,11 @@ use iced::platform_specific::shell::commands::{
 };
 use iced::theme::{self, Theme};
 use iced::widget::{
-    self, button, checkbox, column, container, row, scrollable, text,
-    text_input, Text,
+    self, button, checkbox, column, container, row, scrollable, text, text_input, Id, Text,
 };
 use iced::window::Settings;
-use iced::{window, Application, Element, Program, Task};
+use iced::{window, Element, Task, Widget};
 use iced::{Color, Font, Length, Subscription};
-use iced_core::id::Id;
 use iced_core::keyboard::key::Named;
 use iced_core::layout::Limits;
 use iced_core::{id, keyboard};
@@ -22,7 +20,7 @@ use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 
-static INPUT_ID: Lazy<text_input::Id> = Lazy::new(|| text_input::Id::unique());
+static INPUT_ID: Lazy<Id> = Lazy::new(Id::unique);
 
 pub fn main() -> iced::Result {
     // let env = Env::default()
@@ -30,10 +28,11 @@ pub fn main() -> iced::Result {
     //     .write_style_or("MY_LOG_STYLE", "always");
 
     // env_logger::init_from_env(env);
-    iced::daemon(Todos::title, Todos::update, Todos::view)
+    iced::daemon(Todos::new, Todos::update, Todos::view)
+        .title(Todos::title)
         .subscription(Todos::subscription)
         .font(include_bytes!("../fonts/icons.ttf").as_slice())
-        .run_with(Todos::new)
+        .run()
 }
 
 #[derive(Debug)]
@@ -136,7 +135,7 @@ impl Todos {
                     _ => {}
                 }
 
-                text_input::focus(INPUT_ID.clone())
+                widget::operation::focus(INPUT_ID.clone())
             }
             Todos::Loaded(state) => {
                 let mut saved = false;
@@ -149,9 +148,7 @@ impl Todos {
                     }
                     Message::CreateTask => {
                         if !state.input_value.is_empty() {
-                            state
-                                .tasks
-                                .push(MyTask::new(state.input_value.clone()));
+                            state.tasks.push(MyTask::new(state.input_value.clone()));
                             state.input_value.clear();
                         }
                         Task::none()
@@ -168,16 +165,15 @@ impl Todos {
                     }
                     Message::TaskMessage(i, task_message) => {
                         if let Some(task) = state.tasks.get_mut(i) {
-                            let should_focus =
-                                matches!(task_message, TaskMessage::Edit);
+                            let should_focus = matches!(task_message, TaskMessage::Edit);
 
                             task.update(task_message);
 
                             if should_focus {
                                 let id = MyTask::text_input_id(i);
                                 Task::batch(vec![
-                                    text_input::focus(INPUT_ID.clone()),
-                                    text_input::select_all(INPUT_ID.clone()),
+                                    widget::operation::focus(id.clone()),
+                                    widget::operation::text_input::select_all(id),
                                 ])
                             } else {
                                 Task::none()
@@ -194,9 +190,9 @@ impl Todos {
                     }
                     Message::TabPressed { shift } => {
                         if shift {
-                            widget::focus_previous()
+                            widget::operation::focus_previous()
                         } else {
-                            widget::focus_next()
+                            widget::operation::focus_next()
                         }
                     }
                     Message::CloseRequested(_) => {
@@ -255,8 +251,7 @@ impl Todos {
                     .on_paste(Message::InputChanged);
 
                 let controls = view_controls(tasks, *filter);
-                let filtered_tasks =
-                    tasks.iter().filter(|task| filter.matches(task));
+                let filtered_tasks = tasks.iter().filter(|task| filter.matches(task));
 
                 let tasks: Element<_> = if filtered_tasks.count() > 0 {
                     column(
@@ -265,27 +260,24 @@ impl Todos {
                             .enumerate()
                             .filter(|(_, task)| filter.matches(task))
                             .map(|(i, task)| {
-                                task.view(i).map(move |message| {
-                                    Message::TaskMessage(i, message)
-                                })
+                                task.view(i)
+                                    .map(move |message| Message::TaskMessage(i, message))
                             })
                             .collect::<Vec<_>>(),
                     )
                     .spacing(10)
-                    .into()
+                    .boxed()
                 } else {
                     empty_message(match filter {
                         Filter::All => "You have not created a task yet...",
                         Filter::Active => "All your tasks are done! :D",
-                        Filter::Completed => {
-                            "You have not completed a task yet..."
-                        }
+                        Filter::Completed => "You have not completed a task yet...",
                     })
                 };
 
                 let content = column![title, input, controls, tasks]
                     .spacing(20)
-                    .max_width(800);
+                    .width(Length::Fixed(800.0));
 
                 scrollable(
                     container(content)
@@ -293,7 +285,7 @@ impl Todos {
                         .padding(40)
                         .center_x(Length::Fill),
                 )
-                .into()
+                .boxed()
             }
         }
     }
@@ -325,7 +317,7 @@ impl Todos {
                 }
                 (
                     Event::PlatformSpecific(event::PlatformSpecific::Wayland(
-                        event::wayland::Event::OverlapNotify(e),
+                        event::wayland::Event::OverlapNotify(e, ..),
                     )),
                     _,
                     _,
@@ -370,8 +362,8 @@ pub enum TaskMessage {
 }
 
 impl MyTask {
-    fn text_input_id(i: usize) -> text_input::Id {
-        text_input::Id::new(format!("task-{}", i))
+    fn text_input_id(i: usize) -> Id {
+        format!("task-{i}").into()
     }
 
     fn new(description: String) -> Self {
@@ -405,7 +397,8 @@ impl MyTask {
     fn view(&self, i: usize) -> Element<TaskMessage> {
         match &self.state {
             TaskState::Idle => {
-                let checkbox = checkbox(&self.description, self.completed)
+                let checkbox = checkbox(self.completed)
+                    .label(&self.description)
                     .width(Length::Fill)
                     .on_toggle(TaskMessage::Completed);
 
@@ -418,16 +411,15 @@ impl MyTask {
                 ]
                 .spacing(20)
                 .align_y(Alignment::Center)
-                .into()
+                .boxed()
             }
             TaskState::Editing => {
-                let text_input =
-                    text_input("Describe your task...", &self.description)
-                        .id(Self::text_input_id(i))
-                        .on_submit(TaskMessage::FinishEdition)
-                        .on_input(TaskMessage::DescriptionEdited)
-                        .on_paste(TaskMessage::DescriptionEdited)
-                        .padding(10);
+                let text_input = text_input("Describe your task...", &self.description)
+                    .id(Self::text_input_id(i))
+                    .on_submit(TaskMessage::FinishEdition)
+                    .on_input(TaskMessage::DescriptionEdited)
+                    .on_paste(TaskMessage::DescriptionEdited)
+                    .padding(10);
 
                 row![
                     text_input,
@@ -438,7 +430,7 @@ impl MyTask {
                 ]
                 .spacing(20)
                 .align_y(Alignment::Center)
-                .into()
+                .boxed()
             }
         }
     }
@@ -477,7 +469,7 @@ fn view_controls(tasks: &[MyTask], current_filter: Filter) -> Element<Message> {
     ]
     .spacing(20)
     .align_y(Alignment::Center)
-    .into()
+    .boxed()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -508,7 +500,7 @@ fn loading_message<'a>() -> Element<'a, Message> {
         .width(Length::Fill)
         .height(Length::Fill)
         .center_y(Length::Fill)
-        .into()
+        .boxed()
 }
 
 fn empty_message(message: &str) -> Element<'_, Message> {
@@ -521,11 +513,11 @@ fn empty_message(message: &str) -> Element<'_, Message> {
     .width(Length::Fill)
     .height(Length::Fixed(200.0))
     .center_y(Length::Fill)
-    .into()
+    .boxed()
 }
 
 // Fonts
-const ICONS: Font = Font::with_name("Iced-Todos-Icons");
+const ICONS: Font = Font::new("Iced-Todos-Icons");
 
 fn icon(unicode: char) -> Text<'static> {
     text(unicode.to_string())
@@ -598,8 +590,7 @@ impl SavedState {
     async fn save(self) -> Result<(), SaveError> {
         use async_std::prelude::*;
 
-        let json = serde_json::to_string_pretty(&self)
-            .map_err(|_| SaveError::Format)?;
+        let json = serde_json::to_string_pretty(&self).map_err(|_| SaveError::Format)?;
 
         let path = Self::path();
 
@@ -648,8 +639,7 @@ impl SavedState {
     async fn save(self) -> Result<(), SaveError> {
         let storage = Self::storage().ok_or(SaveError::File)?;
 
-        let json = serde_json::to_string_pretty(&self)
-            .map_err(|_| SaveError::Format)?;
+        let json = serde_json::to_string_pretty(&self).map_err(|_| SaveError::Format)?;
 
         storage
             .set_item("state", &json)

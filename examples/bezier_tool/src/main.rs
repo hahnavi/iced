@@ -1,6 +1,6 @@
 //! This example showcases an interactive `Canvas` for drawing Bézier curves.
-use iced::widget::{button, container, hover, right, space};
-use iced::{Element, Theme};
+use iced::widget::{button, container, hover, right};
+use iced::{Theme, Widget};
 
 pub fn main() -> iced::Result {
     iced::application(Example::default, Example::update, Example::view)
@@ -34,31 +34,30 @@ impl Example {
         }
     }
 
-    fn view(&self) -> Element<'_, Message> {
+    fn view(&self) -> impl Widget<Message> {
         container(hover(
             self.bezier.view(&self.curves).map(Message::AddCurve),
             if self.curves.is_empty() {
-                container(space::horizontal())
+                None
             } else {
-                right(
-                    button("Clear")
-                        .style(button::danger)
-                        .on_press(Message::Clear),
+                Some(
+                    right(
+                        button("Clear")
+                            .style(button::danger)
+                            .on_press(Message::Clear),
+                    )
+                    .padding(10),
                 )
-                .padding(10)
             },
         ))
         .padding(20)
-        .into()
     }
 }
 
 mod bezier {
     use iced::mouse;
-    use iced::widget::canvas::{
-        self, Canvas, Event, Frame, Geometry, Path, Stroke,
-    };
-    use iced::{Element, Fill, Point, Rectangle, Renderer, Theme};
+    use iced::widget::canvas::{self, Canvas, Event, Frame, Geometry, Path, Stroke};
+    use iced::{Fill, Point, Rectangle, Renderer, Theme, Widget};
 
     #[derive(Default)]
     pub struct State {
@@ -66,14 +65,13 @@ mod bezier {
     }
 
     impl State {
-        pub fn view<'a>(&'a self, curves: &'a [Curve]) -> Element<'a, Curve> {
+        pub fn view<'a>(&'a self, curves: &'a [Curve]) -> impl Widget<Curve> {
             Canvas::new(Bezier {
                 state: self,
                 curves,
             })
             .width(Fill)
             .height(Fill)
-            .into()
         }
 
         pub fn request_redraw(&mut self) {
@@ -99,9 +97,7 @@ mod bezier {
             let cursor_position = cursor.position_in(bounds)?;
 
             match event {
-                Event::Mouse(mouse::Event::ButtonPressed(
-                    mouse::Button::Left,
-                )) => Some(
+                Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => Some(
                     match *state {
                         None => {
                             *state = Some(Pending::One {
@@ -130,9 +126,7 @@ mod bezier {
                     }
                     .and_capture(),
                 ),
-                Event::Mouse(mouse::Event::CursorMoved { .. })
-                    if state.is_some() =>
-                {
+                Event::Mouse(mouse::Event::CursorMoved { .. }) if state.is_some() => {
                     Some(canvas::Action::request_redraw())
                 }
                 _ => None,
@@ -147,17 +141,16 @@ mod bezier {
             bounds: Rectangle,
             cursor: mouse::Cursor,
         ) -> Vec<Geometry> {
-            let content =
-                self.state.cache.draw(renderer, bounds.size(), |frame| {
-                    Curve::draw_all(self.curves, frame, theme);
+            let content = self.state.cache.draw(renderer, bounds.size(), |frame| {
+                Curve::draw_all(self.curves, frame, theme);
 
-                    frame.stroke(
-                        &Path::rectangle(Point::ORIGIN, frame.size()),
-                        Stroke::default()
-                            .with_width(2.0)
-                            .with_color(theme.palette().text),
-                    );
-                });
+                frame.stroke(
+                    &Path::rectangle(Point::ORIGIN, frame.size()),
+                    Stroke::default()
+                        .with_width(2.0)
+                        .with_color(theme.seed().text),
+                );
+            });
 
             if let Some(pending) = state {
                 vec![content, pending.draw(renderer, theme, bounds, cursor)]
@@ -200,7 +193,7 @@ mod bezier {
                 &curves,
                 Stroke::default()
                     .with_width(2.0)
-                    .with_color(theme.palette().text),
+                    .with_color(theme.seed().text),
             );
         }
     }
@@ -229,7 +222,7 @@ mod bezier {
                             &line,
                             Stroke::default()
                                 .with_width(2.0)
-                                .with_color(theme.palette().text),
+                                .with_color(theme.seed().text),
                         );
                     }
                     Pending::Two { from, to } => {

@@ -1,10 +1,9 @@
 use iced::font;
 use iced::time::{Duration, hours, minutes};
 use iced::widget::{
-    center_x, center_y, column, container, row, scrollable, slider, table,
-    text, tooltip,
+    center_x, center_y, column, container, row, scrollable, slider, table, text, tooltip,
 };
-use iced::{Center, Element, Fill, Font, Right, Theme};
+use iced::{Center, Fill, Font, Right, Theme, Widget};
 
 pub fn main() -> iced::Result {
     iced::application(Table::new, Table::update, Table::view)
@@ -40,7 +39,7 @@ impl Table {
         }
     }
 
-    fn view(&self) -> Element<'_, Message> {
+    fn view(&self) -> impl Widget<Message> {
         let table = {
             let bold = |header| {
                 text(header).font(Font {
@@ -50,7 +49,7 @@ impl Table {
             };
 
             let columns = [
-                table::column(bold("Name"), |event: &Event| text(&event.name)),
+                table::column(bold("Name"), |event: &Event| text(&event.name)).width(Fill.max(400)),
                 table::column(bold("Time"), |event: &Event| {
                     let minutes = event.duration.as_secs() / 60;
 
@@ -64,13 +63,11 @@ impl Table {
                 .align_y(Center),
                 table::column(bold("Price"), |event: &Event| {
                     if event.price > 0.0 {
-                        text!("${:.2}", event.price).style(
-                            if event.price > 100.0 {
-                                text::warning
-                            } else {
-                                text::default
-                            },
-                        )
+                        text!("${:.2}", event.price).style(if event.price > 100.0 {
+                            text::warning
+                        } else {
+                            text::default
+                        })
                     } else {
                         text("Free").style(text::success).width(Fill).center()
                     }
@@ -121,12 +118,7 @@ impl Table {
                 };
 
             column![
-                labeled_slider(
-                    "Padding",
-                    0.0..=30.0,
-                    self.padding,
-                    Message::PaddingChanged
-                ),
+                labeled_slider("Padding", 0.0..=30.0, self.padding, Message::PaddingChanged),
                 labeled_slider(
                     "Separator",
                     0.0..=5.0,
@@ -142,7 +134,6 @@ impl Table {
             center_y(scrollable(center_x(table)).spacing(10)).padding(10),
             center_x(controls).padding(10).style(container::dark)
         ]
-        .into()
     }
 }
 
@@ -205,8 +196,7 @@ impl Event {
                 rating: 4.7,
             },
             Event {
-                name: "Try to order at a secret ramen place with no sign"
-                    .to_owned(),
+                name: "Try to order at a secret ramen place with no sign".to_owned(),
                 duration: minutes(50),
                 price: 14.0,
                 rating: 4.6,

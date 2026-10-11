@@ -3,7 +3,6 @@ mod dnd_source;
 
 use std::{borrow::Cow, convert::Infallible};
 
-use dnd_destination::dnd_destination;
 use iced::{
     clipboard::mime::{AllowedMimeTypes, AsMimeTypes},
     platform_specific::{
@@ -13,29 +12,18 @@ use iced::{
     widget::{column, container, text},
     window, Element, Length, Task,
 };
-use iced_core::{
-    widget::{tree, Text},
-    Widget,
-};
+use iced_core::widget::Text;
 
 fn main() -> iced::Result {
-    iced::daemon(DndTest::title, DndTest::update, DndTest::view)
-        .run_with(DndTest::new)
+    iced::daemon(DndTest::new, DndTest::update, DndTest::view)
+        .title(DndTest::title)
+        .run()
     // iced::application(Todos::title, Todos::update, Todos::view)
     // .subscription(Todos::subscription)
     // .font(include_bytes!("../fonts/icons.ttf").as_slice())
     // .window_size((500.0, 800.0))
     // .run_with(Todos::new)
 }
-
-const SUPPORTED_MIME_TYPES: &'static [&'static str; 6] = &[
-    "text/plain;charset=utf-8",
-    "text/plain;charset=UTF-8",
-    "UTF8_STRING",
-    "STRING",
-    "text/plain",
-    "TEXT",
-];
 
 #[derive(Debug, Default, Clone)]
 pub struct MyDndString(String);
@@ -75,22 +63,15 @@ impl AsMimeTypes for MyDndString {
         ])
     }
 
-    fn as_bytes(
-        &self,
-        _mime_type: &str,
-    ) -> Option<std::borrow::Cow<'static, [u8]>> {
+    fn as_bytes(&self, _mime_type: &str) -> Option<std::borrow::Cow<'static, [u8]>> {
         Some(Cow::Owned(self.0.clone().into_bytes()))
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct DndTest {
-    /// option with the dragged text
-    source: Option<String>,
     /// is the dnd over the target
     current_text: String,
-    /// main id
-    id: iced_core::window::Id,
 }
 
 #[derive(Debug, Clone)]
@@ -103,17 +84,11 @@ impl DndTest {
     fn new() -> (DndTest, Task<Message>) {
         let current_text = String::from("Hello, world!");
         let mut s = SctkLayerSurfaceSettings::default();
-        s.size_limits = s.size_limits.min_width(100.0).max_width(400.0);
+        s.size_limits.min.width = 100.0;
+        s.size_limits.max.width = 400.0;
         s.size = Some((Some(500), Some(600)));
         // s.anchor = Anchor::TOP.union(Anchor::BOTTOM);
-        (
-            DndTest {
-                current_text,
-                source: None,
-                id: iced_core::window::Id::unique(),
-            },
-            get_layer_surface(s),
-        )
+        (DndTest { current_text }, get_layer_surface(s))
     }
 
     fn title(&self, _id: window::Id) -> String {
@@ -134,7 +109,8 @@ impl DndTest {
     fn view(&self, _id: window::Id) -> Element<Message> {
         let s = self.current_text.chars().rev().collect::<String>();
         let s2 = s.clone();
-        column![
+        Element::new(
+            column![
             dnd_destination::dnd_destination_for_data::<MyDndString, Message>(
                 container(text(format!(
                     "Drag text here: {}",
@@ -175,27 +151,26 @@ impl DndTest {
                 .padding(20)
             )
             .drag_threshold(5.0)
-            .drag_icon(move || {
-                let t: Text<'static, iced::Theme, iced::Renderer> =
-                    text(s.clone());
+            .drag_icon(move || -> (
+                Element<'static, (), iced::Theme, iced::Renderer>,
+                iced_core::widget::tree::State,
+            ) {
+                let t: Text<'static, iced::Theme> = text(s.clone());
                 let state = <iced_core::widget::Text<
                     'static,
                     iced::Theme,
-                    iced::Renderer,
                 > as iced_core::Widget<(), iced::Theme, iced::Renderer>>::state(
                     &t,
                 );
                 (
-                    Element::<'static, (), iced::Theme, iced::Renderer>::from(
-                        t,
-                    ),
+                    Element::new(t),
                     state,
                 )
             })
             .drag_content(move || { MyDndString(s2.clone()) })
         ]
-        .width(Length::Fill)
-        .into()
+            .width(Length::Fill),
+        )
     }
 }
 

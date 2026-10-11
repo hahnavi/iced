@@ -82,15 +82,14 @@ impl Atlas {
             ..Default::default()
         });
 
-        let texture_bind_group =
-            device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("iced_wgpu::image texture atlas bind group"),
-                layout: &texture_layout,
-                entries: &[wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&texture_view),
-                }],
-            });
+        let texture_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("iced_wgpu::image texture atlas bind group"),
+            layout: &texture_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(&texture_view),
+            }],
+        });
 
         Atlas {
             size,
@@ -131,9 +130,7 @@ impl Atlas {
 
         match &entry {
             Entry::Contiguous(allocation) => {
-                self.upload_allocation(
-                    pixels, width, 0, allocation, encoder, belt,
-                );
+                self.upload_allocation(pixels, width, 0, allocation, encoder, belt);
             }
             Entry::Fragmented { fragments, .. } => {
                 for fragment in fragments {
@@ -326,8 +323,7 @@ impl Atlas {
         let bytes_per_row = (4 * (width + padding.width * 2))
             .next_multiple_of(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT)
             as usize;
-        let total_bytes =
-            bytes_per_row * (height + padding.height * 2) as usize;
+        let total_bytes = bytes_per_row * (height + padding.height * 2) as usize;
 
         let buffer_slice = belt.allocate(
             wgpu::BufferSize::new(total_bytes as u64).unwrap(),
@@ -336,7 +332,7 @@ impl Atlas {
 
         const PIXEL: usize = 4;
 
-        let mut fragment = buffer_slice.get_mapped_range_mut();
+        let mut fragment = buffer_slice.get_mapped_range_mut().unwrap();
         let w = width as usize;
         let h = height as usize;
         let pad_w = padding.width as usize;
@@ -349,21 +345,14 @@ impl Atlas {
         // Using `h` instead of `h-1` over-estimates by one full image_width
         // row, causing false positives for bottom-right fragments whose
         // x-offset is non-zero and whose bottom edge reaches the image edge.
-        if h > 0
-            && pixels.len()
-                < offset + (h - 1) * PIXEL * image_width as usize + stride
-        {
+        if h > 0 && pixels.len() < offset + (h - 1) * PIXEL * image_width as usize + stride {
             return;
         }
 
         // bounds check for pad_w low / high to fragment
         if pad_w > 0
             && (offset + stride < PIXEL
-                || offset
-                    + image_width as usize
-                        * PIXEL
-                        * (h.checked_sub(1).unwrap_or(0))
-                    + PIXEL
+                || offset + image_width as usize * PIXEL * (h.checked_sub(1).unwrap_or(0)) + PIXEL
                     > pixels.len())
         {
             return;
@@ -374,19 +363,21 @@ impl Atlas {
             let src = offset + row * PIXEL * image_width as usize;
             let dst = (row + pad_h) * bytes_per_row;
 
-            fragment[dst + PIXEL * pad_w..dst + PIXEL * pad_w + stride]
+            fragment
+                .slice(dst + PIXEL * pad_w..dst + PIXEL * pad_w + stride)
                 .copy_from_slice(&pixels[src..src + stride]);
 
             // Add padding to the sides, if needed
             for i in 0..pad_w {
-                fragment[dst + PIXEL * i..dst + PIXEL * (i + 1)]
+                fragment
+                    .slice(dst + PIXEL * i..dst + PIXEL * (i + 1))
                     .copy_from_slice(&pixels[src..src + PIXEL]);
 
-                fragment[dst + stride + PIXEL * (pad_w + i)
-                    ..dst + stride + PIXEL * (pad_w + i + 1)]
-                    .copy_from_slice(
-                        &pixels[src + stride - PIXEL..src + stride],
-                    );
+                fragment
+                    .slice(
+                        dst + stride + PIXEL * (pad_w + i)..dst + stride + PIXEL * (pad_w + i + 1),
+                    )
+                    .copy_from_slice(&pixels[src + stride - PIXEL..src + stride]);
             }
         }
 
@@ -398,38 +389,39 @@ impl Atlas {
             let src_bottom = offset + (h - 1) * PIXEL * image_width as usize;
 
             // Top
-            fragment[dst_top + PIXEL * pad_w..dst_top + PIXEL * (pad_w + w)]
+            fragment
+                .slice(dst_top + PIXEL * pad_w..dst_top + PIXEL * (pad_w + w))
                 .copy_from_slice(&pixels[src_top..src_top + PIXEL * w]);
 
             // Bottom
             fragment
-                [dst_bottom + PIXEL * pad_w..dst_bottom + PIXEL * (pad_w + w)]
+                .slice(dst_bottom + PIXEL * pad_w..dst_bottom + PIXEL * (pad_w + w))
                 .copy_from_slice(&pixels[src_bottom..src_bottom + PIXEL * w]);
 
             // Corners
             for i in 0..pad_w {
                 // Top left
-                fragment[dst_top + PIXEL * i..dst_top + PIXEL * (i + 1)]
+                fragment
+                    .slice(dst_top + PIXEL * i..dst_top + PIXEL * (i + 1))
                     .copy_from_slice(&pixels[offset..offset + PIXEL]);
 
                 // Top right
-                fragment[dst_top + PIXEL * (w + pad_w + i)
-                    ..dst_top + PIXEL * (w + pad_w + i + 1)]
-                    .copy_from_slice(
-                        &pixels[offset + PIXEL * (w - 1)..offset + PIXEL * w],
-                    );
+                fragment
+                    .slice(dst_top + PIXEL * (w + pad_w + i)..dst_top + PIXEL * (w + pad_w + i + 1))
+                    .copy_from_slice(&pixels[offset + PIXEL * (w - 1)..offset + PIXEL * w]);
 
                 // Bottom left
-                fragment[dst_bottom + PIXEL * i..dst_bottom + PIXEL * (i + 1)]
+                fragment
+                    .slice(dst_bottom + PIXEL * i..dst_bottom + PIXEL * (i + 1))
                     .copy_from_slice(&pixels[src_bottom..src_bottom + PIXEL]);
 
                 // Bottom right
-                fragment[dst_bottom + PIXEL * (w + pad_w + i)
-                    ..dst_bottom + PIXEL * (w + pad_w + i + 1)]
-                    .copy_from_slice(
-                        &pixels[src_bottom + PIXEL * (w - 1)
-                            ..src_bottom + PIXEL * w],
-                    );
+                fragment
+                    .slice(
+                        dst_bottom + PIXEL * (w + pad_w + i)
+                            ..dst_bottom + PIXEL * (w + pad_w + i + 1),
+                    )
+                    .copy_from_slice(&pixels[src_bottom + PIXEL * (w - 1)..src_bottom + PIXEL * w]);
             }
         }
 
@@ -507,9 +499,7 @@ impl Atlas {
 
         let amount_to_copy = self.layers.len() - amount;
 
-        for (i, layer) in
-            self.layers.iter_mut().take(amount_to_copy).enumerate()
-        {
+        for (i, layer) in self.layers.iter_mut().take(amount_to_copy).enumerate() {
             if layer.is_empty() {
                 continue;
             }
@@ -544,22 +534,18 @@ impl Atlas {
         }
 
         self.texture = new_texture;
-        self.texture_view =
-            self.texture.create_view(&wgpu::TextureViewDescriptor {
-                dimension: Some(wgpu::TextureViewDimension::D2Array),
-                ..Default::default()
-            });
+        self.texture_view = self.texture.create_view(&wgpu::TextureViewDescriptor {
+            dimension: Some(wgpu::TextureViewDimension::D2Array),
+            ..Default::default()
+        });
 
-        self.texture_bind_group =
-            Arc::new(device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("iced_wgpu::image texture atlas bind group"),
-                layout: &self.texture_layout,
-                entries: &[wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(
-                        &self.texture_view,
-                    ),
-                }],
-            }));
+        self.texture_bind_group = Arc::new(device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("iced_wgpu::image texture atlas bind group"),
+            layout: &self.texture_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(&self.texture_view),
+            }],
+        }));
     }
 }

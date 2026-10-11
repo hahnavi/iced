@@ -3,7 +3,7 @@
 //! # Example
 //! ```no_run
 //! # mod iced { pub mod widget { pub use iced_widget::*; } pub use iced_widget::Renderer; pub use iced_widget::core::*; }
-//! # pub type Element<'a, Message> = iced_widget::core::Element<'a, Message, iced_widget::Theme, iced_widget::Renderer>;
+//! # use iced::widget::Widget;
 //! #
 //! use iced::widget::slider;
 //!
@@ -16,8 +16,8 @@
 //!     ValueChanged(f32),
 //! }
 //!
-//! fn view(state: &State) -> Element<'_, Message> {
-//!     slider(0.0..=100.0, state.value, Message::ValueChanged).into()
+//! fn view(state: &State) -> impl Widget<Message> {
+//!     slider(0.0..=100.0, state.value, Message::ValueChanged)
 //! }
 //!
 //! fn update(state: &mut State, message: Message) {
@@ -30,10 +30,7 @@
 //! ```
 use std::ops::RangeInclusive;
 
-pub use crate::slider::{
-    Catalog, Handle, HandleShape, RailBackground, Status, Style, StyleFn,
-    default,
-};
+pub use crate::slider::{Catalog, Handle, HandleShape, Status, Style, StyleFn, default};
 
 use crate::core::border::Border;
 use crate::core::keyboard;
@@ -42,12 +39,10 @@ use crate::core::layout::{self, Layout};
 use crate::core::mouse;
 use crate::core::renderer;
 use crate::core::touch;
+use crate::core::widget::Meta;
 use crate::core::widget::tree::{self, Tree};
 use crate::core::window;
-use crate::core::{
-    self, Clipboard, Element, Event, Length, Pixels, Point, Rectangle, Shell,
-    Size, Widget,
-};
+use crate::core::{self, Event, Length, Pixels, Point, Rectangle, Shell, Size, Widget};
 
 /// An vertical bar and a handle that selects a single value from a range of
 /// values.
@@ -57,10 +52,14 @@ use crate::core::{
 /// The [`VerticalSlider`] range of numeric values is generic and its step size defaults
 /// to 1 unit.
 ///
+/// Note: Under the hood values are converted to/from f64 so only values representable exactly as an f64
+/// are possible to select via the slider. However it is likely that the precision of the slider at these
+/// scales is already less than the precision lost from the f64 representation.
+///
 /// # Example
 /// ```no_run
 /// # mod iced { pub mod widget { pub use iced_widget::*; } pub use iced_widget::Renderer; pub use iced_widget::core::*; }
-/// # pub type Element<'a, Message> = iced_widget::core::Element<'a, Message, iced_widget::Theme, iced_widget::Renderer>;
+/// # use iced::widget::Widget;
 /// #
 /// use iced::widget::vertical_slider;
 ///
@@ -73,8 +72,8 @@ use crate::core::{
 ///     ValueChanged(f32),
 /// }
 ///
-/// fn view(state: &State) -> Element<'_, Message> {
-///     vertical_slider(0.0..=100.0, state.value, Message::ValueChanged).into()
+/// fn view(state: &State) -> impl Widget<Message> {
+///     vertical_slider(0.0..=100.0, state.value, Message::ValueChanged)
 /// }
 ///
 /// fn update(state: &mut State, message: Message) {
@@ -90,8 +89,8 @@ where
     Theme: Catalog,
 {
     range: RangeInclusive<T>,
-    step: T,
-    shift_step: Option<T>,
+    step: f64,
+    shift_step: Option<f64>,
     value: T,
     default: Option<T>,
     on_change: Box<dyn Fn(T) -> Message + 'a>,
@@ -104,7 +103,7 @@ where
 
 impl<'a, T, Message, Theme> VerticalSlider<'a, T, Message, Theme>
 where
-    T: Copy + From<u8> + std::cmp::PartialOrd,
+    T: Copy + std::cmp::PartialOrd,
     Message: Clone,
     Theme: Catalog,
 {
@@ -139,7 +138,7 @@ where
             value,
             default: None,
             range,
-            step: T::from(1),
+            step: 1.0,
             shift_step: None,
             on_change: Box::new(on_change),
             on_release: None,
@@ -182,16 +181,16 @@ where
     }
 
     /// Sets the step size of the [`VerticalSlider`].
-    pub fn step(mut self, step: T) -> Self {
-        self.step = step;
+    pub fn step(mut self, step: impl num_traits::AsPrimitive<f64>) -> Self {
+        self.step = step.as_();
         self
     }
 
     /// Sets the optional "shift" step for the [`VerticalSlider`].
     ///
     /// If set, this value is used as the step while the shift key is pressed.
-    pub fn shift_step(mut self, shift_step: impl Into<T>) -> Self {
-        self.shift_step = Some(shift_step.into());
+    pub fn shift_step(mut self, shift_step: impl num_traits::AsPrimitive<f64>) -> Self {
+        self.shift_step = Some(shift_step.as_());
         self
     }
 
@@ -214,10 +213,12 @@ where
     }
 }
 
+impl<T, Message, Theme> Meta for VerticalSlider<'_, T, Message, Theme> where Theme: Catalog {}
+
 impl<T, Message, Theme, Renderer> Widget<Message, Theme, Renderer>
     for VerticalSlider<'_, T, Message, Theme>
 where
-    T: Copy + Into<f64> + num_traits::FromPrimitive,
+    T: Copy + num_traits::AsPrimitive<f64> + num_traits::FromPrimitive,
     Message: Clone,
     Theme: Catalog,
     Renderer: core::Renderer,
@@ -237,23 +238,17 @@ where
         }
     }
 
-    fn layout(
-        &mut self,
-        _tree: &mut Tree,
-        _renderer: &Renderer,
-        limits: &layout::Limits,
-    ) -> layout::Node {
-        layout::atomic(limits, self.width, self.height)
+    fn layout(&mut self, tree: &mut Tree, _renderer: &Renderer, limits: &layout::Limits) {
+        tree.size = layout::atomic(limits, self.width, self.height);
     }
 
     fn update(
         &mut self,
         tree: &mut Tree,
         event: &Event,
-        layout: Layout<'_>,
+        layout: Layout,
         cursor: mouse::Cursor,
         _renderer: &Renderer,
-        _clipboard: &mut dyn Clipboard,
         shell: &mut Shell<'_, Message>,
         viewport: &Rectangle,
     ) {
@@ -273,15 +268,13 @@ where
                     self.shift_step.unwrap_or(self.step)
                 } else {
                     self.step
-                }
-                .into();
+                };
 
-                let start = (*self.range.start()).into();
-                let end = (*self.range.end()).into();
+                let start = (*self.range.start()).as_();
+                let end = (*self.range.end()).as_();
 
-                let percent = 1.0
-                    - f64::from(cursor_position.y - bounds.y)
-                        / f64::from(bounds.height);
+                let percent =
+                    1.0 - f64::from(cursor_position.y - bounds.y) / f64::from(bounds.height);
 
                 let steps = (percent * (end - start) / step).round();
                 let value = steps * step + start;
@@ -295,13 +288,12 @@ where
                 self.shift_step.unwrap_or(self.step)
             } else {
                 self.step
-            }
-            .into();
+            };
 
-            let steps = (value.into() / step).round();
+            let steps = (value.as_() / step).round();
             let new_value = step * (steps + 1.0);
 
-            if new_value > (*self.range.end()).into() {
+            if new_value > (*self.range.end()).as_() {
                 return Some(*self.range.end());
             }
 
@@ -313,13 +305,12 @@ where
                 self.shift_step.unwrap_or(self.step)
             } else {
                 self.step
-            }
-            .into();
+            };
 
-            let steps = (value.into() / step).round();
+            let steps = (value.as_() / step).round();
             let new_value = step * (steps - 1.0);
 
-            if new_value < (*self.range.start()).into() {
+            if new_value < (*self.range.start()).as_() {
                 return Some(*self.range.start());
             }
 
@@ -327,7 +318,7 @@ where
         };
 
         let change = |new_value: T| {
-            if (self.value.into() - new_value.into()).abs() > f64::EPSILON {
+            if (self.value.as_() - new_value.as_()).abs() > f64::EPSILON {
                 shell.publish((self.on_change)(new_value));
 
                 self.value = new_value;
@@ -337,12 +328,8 @@ where
         match event {
             Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left))
             | Event::Touch(touch::Event::FingerPressed { .. }) => {
-                if let Some(cursor_position) =
-                    cursor.position_over(layout.bounds())
-                {
-                    if state.keyboard_modifiers.control()
-                        || state.keyboard_modifiers.command()
-                    {
+                if let Some(cursor_position) = cursor.position_over(layout.bounds()) {
+                    if state.keyboard_modifiers.control() || state.keyboard_modifiers.command() {
                         let _ = self.default.map(change);
                         state.is_dragging = false;
                     } else {
@@ -357,63 +344,51 @@ where
             | Event::Mouse(mouse::Event::CursorLeft)
             | Event::Mouse(mouse::Event::CursorEntered)
             | Event::Touch(touch::Event::FingerLifted { .. })
-            | Event::Touch(touch::Event::FingerLost { .. }) => {
-                if is_dragging {
-                    if let Some(on_release) = self.on_release.clone() {
-                        shell.publish(on_release);
-                    }
-                    state.is_dragging = false;
+            | Event::Touch(touch::Event::FingerLost { .. })
+                if is_dragging =>
+            {
+                if let Some(on_release) = self.on_release.clone() {
+                    shell.publish(on_release);
                 }
+                state.is_dragging = false;
             }
             Event::Mouse(mouse::Event::CursorMoved { .. })
-            | Event::Touch(touch::Event::FingerMoved { .. }) => {
-                if is_dragging {
-                    let position = cursor.land().position();
-                    let outside = position
-                        .is_none_or(|position| !viewport.contains(position));
+            | Event::Touch(touch::Event::FingerMoved { .. })
+                if is_dragging =>
+            {
+                let _ = cursor.observe().position().and_then(locate).map(change);
 
-                    if outside {
-                        if let Some(on_release) = self.on_release.clone() {
-                            shell.publish(on_release);
-                        }
-                        state.is_dragging = false;
-                    } else {
-                        let _ = position.and_then(locate).map(change);
-                        shell.capture_event();
-                    }
-                }
+                shell.capture_event();
             }
             Event::Mouse(mouse::Event::WheelScrolled { delta })
-                if state.keyboard_modifiers.control() =>
+                if state.keyboard_modifiers.control() && cursor.is_over(layout.bounds()) =>
             {
-                if cursor.is_over(layout.bounds()) {
-                    let delta = match *delta {
-                        mouse::ScrollDelta::Lines { x: _, y } => y,
-                        mouse::ScrollDelta::Pixels { x: _, y } => y,
-                    };
+                let delta = match *delta {
+                    mouse::ScrollDelta::Lines { x: _, y } => y,
+                    mouse::ScrollDelta::Pixels { x: _, y } => y,
+                };
 
-                    if delta < 0.0 {
-                        let _ = decrement(current_value).map(change);
-                    } else {
-                        let _ = increment(current_value).map(change);
-                    }
-
-                    shell.capture_event();
+                if delta < 0.0 {
+                    let _ = decrement(current_value).map(change);
+                } else {
+                    let _ = increment(current_value).map(change);
                 }
+
+                shell.capture_event();
             }
-            Event::Keyboard(keyboard::Event::KeyPressed { key, .. }) => {
-                if cursor.is_over(layout.bounds()) {
-                    match key {
-                        Key::Named(key::Named::ArrowUp) => {
-                            let _ = increment(current_value).map(change);
-                            shell.capture_event();
-                        }
-                        Key::Named(key::Named::ArrowDown) => {
-                            let _ = decrement(current_value).map(change);
-                            shell.capture_event();
-                        }
-                        _ => (),
+            Event::Keyboard(keyboard::Event::KeyPressed { key, .. })
+                if cursor.is_over(layout.bounds()) =>
+            {
+                match key {
+                    Key::Named(key::Named::ArrowUp) => {
+                        let _ = increment(current_value).map(change);
+                        shell.capture_event();
                     }
+                    Key::Named(key::Named::ArrowDown) => {
+                        let _ = decrement(current_value).map(change);
+                        shell.capture_event();
+                    }
+                    _ => (),
                 }
             }
             Event::Keyboard(keyboard::Event::ModifiersChanged(modifiers)) => {
@@ -443,39 +418,34 @@ where
         renderer: &mut Renderer,
         theme: &Theme,
         _style: &renderer::Style,
-        layout: Layout<'_>,
+        layout: Layout,
         _cursor: mouse::Cursor,
         _viewport: &Rectangle,
     ) {
         let bounds = layout.bounds();
 
-        let style =
-            theme.style(&self.class, self.status.unwrap_or(Status::Active));
+        let style = theme.style(&self.class, self.status.unwrap_or(Status::Active));
 
-        let (handle_width, handle_height, handle_border_radius) =
-            match style.handle.shape {
-                HandleShape::Circle { radius } => {
-                    (radius * 2.0, radius * 2.0, radius.into())
-                }
-                HandleShape::Rectangle {
-                    width,
-                    border_radius,
-                    height,
-                } => (f32::from(width), f32::from(height), border_radius),
-            };
+        let (handle_width, handle_height, handle_border_radius) = match style.handle.shape {
+            HandleShape::Circle { radius } => (radius * 2.0, radius * 2.0, radius.into()),
+            HandleShape::Rectangle {
+                width,
+                height,
+                border_radius,
+            } => (f32::from(height), f32::from(width), border_radius),
+        };
 
-        let value = self.value.into() as f32;
+        let value = self.value.as_() as f32;
         let (range_start, range_end) = {
             let (start, end) = self.range.clone().into_inner();
 
-            (start.into() as f32, end.into() as f32)
+            (start.as_() as f32, end.as_() as f32)
         };
 
         let offset = if range_start >= range_end {
             0.0
         } else {
-            (bounds.height - handle_width) * (value - range_end)
-                / (range_start - range_end)
+            (bounds.height - handle_width) * (value - range_end) / (range_start - range_end)
         };
 
         let rail_x = bounds.x + bounds.width / 2.0;
@@ -530,7 +500,7 @@ where
     fn mouse_interaction(
         &self,
         tree: &Tree,
-        layout: Layout<'_>,
+        layout: Layout,
         cursor: mouse::Cursor,
         _viewport: &Rectangle,
         _renderer: &Renderer,
@@ -554,22 +524,6 @@ where
         } else {
             mouse::Interaction::default()
         }
-    }
-}
-
-impl<'a, T, Message, Theme, Renderer>
-    From<VerticalSlider<'a, T, Message, Theme>>
-    for Element<'a, Message, Theme, Renderer>
-where
-    T: Copy + Into<f64> + num_traits::FromPrimitive + 'a,
-    Message: Clone + 'a,
-    Theme: Catalog + 'a,
-    Renderer: core::Renderer + 'a,
-{
-    fn from(
-        slider: VerticalSlider<'a, T, Message, Theme>,
-    ) -> Element<'a, Message, Theme, Renderer> {
-        Element::new(slider)
     }
 }
 

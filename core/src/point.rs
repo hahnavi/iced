@@ -18,7 +18,7 @@ impl Point {
     pub const ORIGIN: Self = Self::new(0.0, 0.0);
 }
 
-impl<T: Num> Point<T> {
+impl<T> Point<T> {
     /// Creates a new [`Point`] with the given coordinates.
     pub const fn new(x: T, y: T) -> Self {
         Self { x, y }
@@ -141,6 +141,14 @@ where
 }
 
 impl Point<f32> {
+    /// Rounds the [`Point`] coordinates.
+    pub fn round(self) -> Self {
+        Point {
+            x: self.x.round(),
+            y: self.y.round(),
+        }
+    }
+
     /// Snaps the [`Point`] to __unsigned__ integer coordinates.
     pub fn snap(self) -> Point<u32> {
         Point {

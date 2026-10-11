@@ -12,11 +12,11 @@ static CLIENT: LazyLock<reqwest::Client> = LazyLock::new(reqwest::Client::new);
 pub struct Image {
     pub id: Id,
     url: String,
-    hash: String,
+    hash: Hash,
 }
 
 impl Image {
-    pub const LIMIT: usize = 96;
+    pub const LIMIT: usize = 200;
 
     pub async fn list() -> Result<Vec<Self>, Error> {
         #[derive(Deserialize)]
@@ -45,13 +45,15 @@ impl Image {
             .collect())
     }
 
-    pub async fn blurhash(
-        self,
-        width: u32,
-        height: u32,
-    ) -> Result<Blurhash, Error> {
+    pub async fn blurhash(self, width: u32, height: u32) -> Result<Blurhash, Error> {
         task::spawn_blocking(move || {
-            let pixels = blurhash::decode(&self.hash, width, height, 1.0)?;
+            let hash = match &self.hash {
+                Hash::Number(n) => n.to_string(),
+                Hash::String(hash) => hash.clone(),
+                Hash::Other => String::new(),
+            };
+
+            let pixels = blurhash::decode(&hash, width, height, 1.0)?;
 
             Ok::<_, Error>(Blurhash {
                 rgba: Rgba {
@@ -83,9 +85,7 @@ impl Image {
                         .url
                         .split("/")
                         .map(|part| {
-                            if part.starts_with("width=")
-                                || part.starts_with("original=")
-                            {
+                            if part.starts_with("width=") || part.starts_with("original=") {
                                 format!("width={}", width * 2) // High DPI
                             } else {
                                 part.to_owned()
@@ -105,10 +105,16 @@ impl Image {
     }
 }
 
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize)]
 pub struct Id(u32);
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+enum Hash {
+    Number(u32),
+    String(String),
+    Other,
+}
 
 #[derive(Debug, Clone)]
 pub struct Blurhash {

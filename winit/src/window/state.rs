@@ -1,4 +1,5 @@
 use crate::conversion;
+use crate::core::renderer;
 use crate::core::{Color, Size};
 use crate::core::{mouse, theme, window};
 use crate::graphics::Viewport;
@@ -15,8 +16,7 @@ pub struct State<P: Program>
 where
     P::Theme: theme::Base,
 {
-    pub(crate) title: String,
-    scale_factor: f64,
+    title: String,
     viewport: Viewport,
     surface_version: u64,
     cursor_position: Option<winit::dpi::PhysicalPosition<f64>>,
@@ -36,7 +36,6 @@ where
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("window::State")
             .field("title", &self.title)
-            .field("scale_factor", &self.scale_factor)
             .field("viewport", &self.viewport)
             .field("cursor_position", &self.cursor_position)
             .field("style", &self.style)
@@ -58,8 +57,7 @@ where
         let title = program.title(window_id);
         let scale_factor = program.scale_factor(window_id);
         let theme = program.theme(window_id);
-        let theme_mode =
-            theme.as_ref().map(theme::Base::mode).unwrap_or_default();
+        let theme_mode = theme.as_ref().map(theme::Base::mode).unwrap_or_default();
         let default_theme = <P::Theme as theme::Base>::default(system_theme);
         let style = program.style(theme.as_ref().unwrap_or(&default_theme));
 
@@ -68,13 +66,15 @@ where
 
             Viewport::with_physical_size(
                 Size::new(physical_size.width, physical_size.height),
-                window.scale_factor() as f64 * scale_factor,
+                renderer::Scale {
+                    window: window.scale_factor() as f32,
+                    application: scale_factor as f32,
+                },
             )
         };
 
         Self {
             title,
-            scale_factor,
             viewport,
             surface_version: 0,
             cursor_position: None,
@@ -117,8 +117,24 @@ where
         self.viewport.logical_size()
     }
 
+    pub fn scale(&self) -> renderer::Scale {
+        self.viewport.scale()
+    }
+
     pub fn scale_factor(&self) -> f64 {
-        self.viewport.scale_factor()
+        f64::from(self.viewport.scale_factor())
+    }
+
+    pub fn update_scale_factor(&mut self, scale_factor: f64) {
+        let scale = self.viewport.scale();
+        self.viewport = Viewport::with_physical_size(
+            self.viewport.physical_size(),
+            renderer::Scale {
+                window: scale_factor as f32,
+                application: scale.application,
+            },
+        );
+        self.surface_version += 1;
     }
 
     pub fn set_logical_cursor_pos(&mut self, pos: LogicalPosition<f64>) {
@@ -130,10 +146,7 @@ where
     pub fn cursor(&self) -> mouse::Cursor {
         self.cursor_position
             .map(|cursor_position| {
-                conversion::cursor_position(
-                    cursor_position,
-                    self.viewport.scale_factor(),
-                )
+                conversion::cursor_position(cursor_position, self.scale_factor())
             })
             .map(mouse::Cursor::Available)
             .unwrap_or(mouse::Cursor::Unavailable)
@@ -159,24 +172,10 @@ where
         self.style.text_color
     }
 
-    /// Returns the current icon [`Color`] of the [`State`].
     pub fn icon_color(&self) -> Color {
         self.style.icon_color
     }
 
-    /// Update the scale factor
-    pub(crate) fn update_scale_factor(&mut self, new_scale_factor: f64) {
-        let size = self.viewport.logical_size();
-
-        self.viewport = Viewport::with_logical_size(
-            size,
-            new_scale_factor * self.scale_factor,
-        );
-
-        self.surface_version = self.surface_version.wrapping_add(1);
-    }
-
-    /// Processes the provided window event and updates the [`State`] accordingly.
     pub fn update(
         &mut self,
         program: &program::Instance<P>,
@@ -189,7 +188,10 @@ where
 
                 self.viewport = Viewport::with_physical_size(
                     size,
-                    window.scale_factor() * self.scale_factor,
+                    renderer::Scale {
+                        window: window.scale_factor() as f32,
+                        application: self.viewport.scale().application,
+                    },
                 );
                 self.surface_version += 1;
             }
@@ -197,7 +199,16 @@ where
                 scale_factor: new_scale_factor,
                 ..
             } => {
-                self.update_scale_factor(*new_scale_factor);
+                let size = self.viewport.physical_size();
+
+                self.viewport = Viewport::with_physical_size(
+                    size,
+                    renderer::Scale {
+                        window: *new_scale_factor as f32,
+                        application: self.viewport.scale().application,
+                    },
+                );
+                self.surface_version += 1;
             }
             WindowEvent::PointerEntered { position, .. } => {
                 self.cursor_position = Some(*position);
@@ -216,9 +227,8 @@ where
                 self.modifiers = new_modifiers.state();
             }
             WindowEvent::ThemeChanged(theme) => {
-                self.default_theme = <P::Theme as theme::Base>::default(
-                    conversion::theme_mode(*theme),
-                );
+                self.default_theme =
+                    <P::Theme as theme::Base>::default(conversion::theme_mode(*theme));
 
                 if self.theme.is_none() {
                     self.style = program.style(&self.default_theme);
@@ -249,24 +259,14 @@ where
         let mut new_size = window.surface_size();
         let current_size = self.viewport.physical_size();
 
-        if self.scale_factor != new_scale_factor
-            || (current_size.width, current_size.height)
-                != (new_size.width, new_size.height)
-                && !(new_size.width == 0 && new_size.height == 0)
-        {
-            if new_size.width == 0 {
-                new_size.width = current_size.width;
-            }
-            if new_size.height == 0 {
-                new_size.height = current_size.height;
-            }
+        if self.viewport.scale().application != new_scale_factor as f32 {
             self.viewport = Viewport::with_physical_size(
-                Size::new(new_size.width, new_size.height),
-                window_scale * new_scale_factor,
+                self.viewport.physical_size(),
+                renderer::Scale {
+                    window: window.scale_factor() as f32,
+                    application: new_scale_factor as f32,
+                },
             );
-
-            self.scale_factor = new_scale_factor;
-            self.surface_version = self.surface_version.wrapping_add(1);
         }
 
         // Update theme and appearance
@@ -287,8 +287,7 @@ where
                 // Assume the old mode matches the system one
                 // We will be notified otherwise
                 if new_mode == theme::Mode::None {
-                    self.default_theme =
-                        <P::Theme as theme::Base>::default(self.theme_mode);
+                    self.default_theme = <P::Theme as theme::Base>::default(self.theme_mode);
 
                     if self.theme.is_none() {
                         self.style = program.style(&self.default_theme);

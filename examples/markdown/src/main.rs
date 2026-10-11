@@ -2,16 +2,14 @@ mod icon;
 
 use iced::animation;
 use iced::clipboard;
-use iced::highlighter;
+use iced::padding;
 use iced::time::{self, Instant, milliseconds};
 use iced::widget::{
-    button, center_x, container, hover, image, markdown, operation, right, row,
+    button, center_x, container, hover, image, markdown, operation, pick_list, right, row,
     scrollable, sensor, space, text_editor, toggler,
 };
 use iced::window;
-use iced::{
-    Animation, Element, Fill, Font, Function, Subscription, Task, Theme,
-};
+use iced::{Animation, Center, Code, Fill, Font, Function, Subscription, Task, Theme, Widget};
 
 use std::collections::HashMap;
 use std::io;
@@ -24,7 +22,7 @@ pub fn main() -> iced::Result {
         Markdown::subscription,
         Markdown::view,
     )
-    .font(icon::FONT)
+    .fonts([icon::FONT])
     .theme(Markdown::theme)
     .run()
 }
@@ -40,7 +38,7 @@ struct Markdown {
 
 enum Mode {
     Preview,
-    Stream { pending: String },
+    Stream { content: String, offset: usize },
 }
 
 enum Image {
@@ -61,6 +59,7 @@ enum Message {
     ImageShown(markdown::Uri),
     ImageDownloaded(markdown::Uri, Result<image::Handle, Error>),
     ToggleStream(bool),
+    ThemeSelected(Theme),
     NextToken,
     Tick,
 }
@@ -75,7 +74,7 @@ impl Markdown {
                 raw: text_editor::Content::with_text(INITIAL_CONTENT),
                 images: HashMap::new(),
                 mode: Mode::Preview,
-                theme: Theme::TokyoNight,
+                theme: Theme::CatppuccinMocha,
                 now: Instant::now(),
             },
             operation::focus_next(),
@@ -98,7 +97,7 @@ impl Markdown {
 
                 Task::none()
             }
-            Message::Copy(content) => clipboard::write(content),
+            Message::Copy(content) => clipboard::write(content).discard(),
             Message::LinkClicked(link) => {
                 let _ = webbrowser::open(&link);
                 Task::none()
@@ -136,30 +135,31 @@ impl Markdown {
                     self.content = markdown::Content::new();
 
                     self.mode = Mode::Stream {
-                        pending: self.raw.text(),
+                        content: self.raw.text(),
+                        offset: 0,
                     };
 
-                    operation::snap_to_end("preview")
+                    operation::scrollable::snap_to_end("preview", operation::Animation::Auto)
                 } else {
                     self.mode = Mode::Preview;
 
                     Task::none()
                 }
             }
+            Message::ThemeSelected(theme) => {
+                self.theme = theme;
+
+                Task::none()
+            }
             Message::NextToken => {
                 match &mut self.mode {
                     Mode::Preview => {}
-                    Mode::Stream { pending } => {
-                        if pending.is_empty() {
+                    Mode::Stream { content, offset } => {
+                        if *offset >= content.len() {
                             self.mode = Mode::Preview;
-                        } else {
-                            let mut tokens = pending.split(' ');
-
-                            if let Some(token) = tokens.next() {
-                                self.content.push_str(&format!("{token} "));
-                            }
-
-                            *pending = tokens.collect::<Vec<_>>().join(" ");
+                        } else if let Some(token) = content[*offset..].chars().next() {
+                            self.content.push_str(&token.to_string());
+                            *offset += token.len_utf8();
                         }
                     }
                 }
@@ -170,19 +170,22 @@ impl Markdown {
         }
     }
 
-    fn view(&self) -> Element<'_, Message> {
+    fn view(&self) -> impl Widget<Message> {
+        let settings = markdown::Settings::default().line_height(1.5);
+
         let editor = text_editor(&self.raw)
             .placeholder("Type your Markdown here...")
             .on_action(Message::Edit)
             .height(Fill)
-            .padding(10)
+            .padding(settings.spacing)
             .font(Font::MONOSPACE)
-            .highlight("markdown", highlighter::Theme::Base16Ocean);
+            .highlight("markdown");
 
         let preview = markdown::view_with(
             self.content.items(),
-            &self.theme,
+            settings,
             &CustomViewer {
+                theme: &self.theme,
                 images: &self.images,
                 now: self.now,
             },
@@ -192,21 +195,26 @@ impl Markdown {
             editor,
             hover(
                 scrollable(preview)
-                    .spacing(10)
+                    .spacing(settings.spacing)
                     .width(Fill)
                     .height(Fill)
                     .id("preview"),
                 right(
-                    toggler(matches!(self.mode, Mode::Stream { .. }))
-                        .label("Stream")
-                        .on_toggle(Message::ToggleStream)
+                    row![
+                        toggler(matches!(self.mode, Mode::Stream { .. }))
+                            .label("Stream")
+                            .on_toggle(Message::ToggleStream),
+                        pick_list(Some(&self.theme), Theme::ALL, Theme::to_string)
+                            .on_select(Message::ThemeSelected),
+                    ]
+                    .spacing(10)
+                    .align_y(Center)
                 )
-                .padding([0, 20])
+                .padding(padding::right(settings.spacing + 10.0))
             )
         ]
-        .spacing(10)
-        .padding(10)
-        .into()
+        .spacing(settings.spacing)
+        .padding(settings.spacing / 2.0)
     }
 
     fn theme(&self) -> Theme {
@@ -216,9 +224,7 @@ impl Markdown {
     fn subscription(&self) -> Subscription<Message> {
         let listen_stream = match self.mode {
             Mode::Preview => Subscription::none(),
-            Mode::Stream { .. } => {
-                time::every(milliseconds(10)).map(|_| Message::NextToken)
-            }
+            Mode::Stream { .. } => time::every(milliseconds(5)).map(|_| Message::NextToken),
         };
 
         let animate = {
@@ -239,11 +245,20 @@ impl Markdown {
 }
 
 struct CustomViewer<'a> {
+    theme: &'a Theme,
     images: &'a HashMap<markdown::Uri, Image>,
     now: Instant,
 }
 
 impl<'a> markdown::Viewer<'a, Message> for CustomViewer<'a> {
+    fn theme(&self) -> &Theme {
+        self.theme
+    }
+
+    fn highlighter(&self) -> &dyn markdown::Highlighter<Code> {
+        &Code::highlight
+    }
+
     fn on_link_click(url: markdown::Uri) -> Message {
         Message::LinkClicked(url)
     }
@@ -254,20 +269,20 @@ impl<'a> markdown::Viewer<'a, Message> for CustomViewer<'a> {
         url: &'a markdown::Uri,
         _title: &'a str,
         _alt: &markdown::Text,
-    ) -> Element<'a, Message> {
+    ) -> impl Widget<Message> + 'a {
         if let Some(Image::Ready { handle, fade_in }) = self.images.get(url) {
             center_x(
                 image(handle)
                     .opacity(fade_in.interpolate(0.0, 1.0, self.now))
                     .scale(fade_in.interpolate(1.2, 1.0, self.now)),
             )
-            .into()
+            .boxed()
         } else {
             sensor(space())
                 .key_ref(url.as_str())
                 .delay(milliseconds(500))
                 .on_show(|_size| Message::ImageShown(url.clone()))
-                .into()
+                .boxed()
         }
     }
 
@@ -277,9 +292,8 @@ impl<'a> markdown::Viewer<'a, Message> for CustomViewer<'a> {
         _language: Option<&'a str>,
         code: &'a str,
         lines: &'a [markdown::Text],
-    ) -> Element<'a, Message> {
-        let code_block =
-            markdown::code_block(settings, lines, Message::LinkClicked);
+    ) -> impl Widget<Message> + 'a {
+        let code_block = markdown::code_block(self, settings, lines, Message::LinkClicked);
 
         let copy = button(icon::copy().size(12))
             .padding(2)
@@ -288,8 +302,7 @@ impl<'a> markdown::Viewer<'a, Message> for CustomViewer<'a> {
 
         hover(
             code_block,
-            right(container(copy).style(container::dark))
-                .padding(settings.spacing / 2),
+            right(container(copy).style(container::dark)).padding(settings.spacing / 2),
         )
     }
 }

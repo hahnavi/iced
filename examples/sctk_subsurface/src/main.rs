@@ -16,25 +16,25 @@ use iced::{
     window::{self, Id, Settings},
     Element, Length, Subscription, Task,
 };
-use std::sync::{Arc, Mutex};
 
 mod subsurface_container;
 mod wayland;
 
 fn main() -> iced::Result {
     iced::daemon(
-        SubsurfaceApp::title,
+        SubsurfaceApp::new,
         SubsurfaceApp::update,
         SubsurfaceApp::view,
     )
+    .title(SubsurfaceApp::title)
     .subscription(SubsurfaceApp::subscription)
-    .run_with(SubsurfaceApp::new)
+    .run()
 }
 
 #[derive(Debug, Clone, Default)]
 struct SubsurfaceApp {
-    text: Arc<Mutex<String>>,
-    counter: Arc<Mutex<u32>>,
+    text: String,
+    counter: u32,
     connection: Option<Connection>,
     red_buffer: Option<SubsurfaceBuffer>,
     green_buffer: Option<SubsurfaceBuffer>,
@@ -74,8 +74,7 @@ impl SubsurfaceApp {
                 WaylandEvent::Output(_evt, output) => {
                     if self.connection.is_none() {
                         if let Some(backend) = output.backend().upgrade() {
-                            self.connection =
-                                Some(Connection::from_backend(backend));
+                            self.connection = Some(Connection::from_backend(backend));
                         }
                     }
                 }
@@ -91,8 +90,6 @@ impl SubsurfaceApp {
             },
             Message::Pressed(side) => println!("{side} surface pressed"),
             Message::Id(id) => {
-                let my_text = self.text.clone();
-                let my_counter = self.counter.clone();
                 return get_subsurface(SctkSubsurfaceSettings {
                     id: window::Id::unique(),
                     parent: id,
@@ -106,52 +103,42 @@ impl SubsurfaceApp {
                 });
             }
             Message::Inc => {
-                let mut guard = self.counter.lock().unwrap();
-
-                *guard += 1;
+                self.counter += 1;
             }
             Message::Text(s) => {
-                let mut guard = self.text.lock().unwrap();
-                *guard = s;
+                self.text = s;
             }
         }
         Task::none()
     }
 
     fn view(&self, id: window::Id) -> Element<Message> {
-        let my_text_guard = self.text.lock().unwrap();
         if let Some((red_buffer, green_buffer)) =
             self.red_buffer.iter().zip(self.green_buffer.iter()).next()
         {
-            column![
+            Element::new(column![
                 iced::widget::row![
                     iced::widget::button(
                         subsurface_container::SubsurfaceContainer::new()
                             .width(Length::Fill)
                             .height(Length::Fill)
                             .push(
-                                subsurface_widget::Subsurface::new(
-                                    red_buffer.clone()
-                                )
-                                .width(Length::Fill)
-                                .height(Length::Fill)
-                                .z(0)
+                                subsurface_widget::Subsurface::new(red_buffer.clone())
+                                    .width(Length::Fill)
+                                    .height(Length::Fill)
+                                    .z(0)
                             )
                             .push(
-                                subsurface_widget::Subsurface::new(
-                                    green_buffer.clone()
-                                )
-                                .width(Length::Fixed(1920.))
-                                .height(Length::Fixed(200.))
-                                .z(1)
+                                subsurface_widget::Subsurface::new(green_buffer.clone())
+                                    .width(Length::Fixed(1920.))
+                                    .height(Length::Fixed(200.))
+                                    .z(1)
                             )
                             .push(
-                                subsurface_widget::Subsurface::new(
-                                    red_buffer.clone()
-                                )
-                                .width(Length::Fill)
-                                .height(Length::Fixed(100.))
-                                .z(2)
+                                subsurface_widget::Subsurface::new(red_buffer.clone())
+                                    .width(Length::Fill)
+                                    .height(Length::Fixed(100.))
+                                    .z(2)
                             )
                     )
                     .width(Length::Fill)
@@ -166,22 +153,18 @@ impl SubsurfaceApp {
                     .height(Length::Fill)
                     .on_press(Message::Pressed("right"))
                 ],
-                text_input("asdf", &my_text_guard).on_input(Message::Text)
-            ]
-            .into()
+                text_input("asdf", &self.text).on_input(Message::Text)
+            ])
         } else {
-            text("No subsurface").into()
+            Element::new(text("No subsurface"))
         }
     }
 
     fn subscription(&self) -> Subscription<Message> {
         let mut subscriptions = vec![iced::event::listen_with(|evt, _, _| {
-            if let iced::Event::PlatformSpecific(
-                iced::event::PlatformSpecific::Wayland(WaylandEvent::Output(
-                    evt,
-                    output,
-                )),
-            ) = evt
+            if let iced::Event::PlatformSpecific(iced::event::PlatformSpecific::Wayland(
+                WaylandEvent::Output(evt, output),
+            )) = evt
             {
                 Some(Message::WaylandEvent(WaylandEvent::Output(evt, output)))
             } else {
@@ -189,8 +172,7 @@ impl SubsurfaceApp {
             }
         })];
         if let Some(connection) = &self.connection {
-            subscriptions
-                .push(wayland::subscription(connection).map(Message::Wayland));
+            subscriptions.push(wayland::subscription(connection).map(Message::Wayland));
         }
         Subscription::batch(subscriptions)
     }

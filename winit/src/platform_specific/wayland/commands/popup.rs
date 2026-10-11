@@ -16,30 +16,25 @@ use iced_runtime::{
 /// <https://wayland.app/protocols/xdg-shell#xdg_surface:request:get_popup>
 pub fn get_popup<Message>(popup: SctkPopupSettings) -> Task<Message> {
     task::effect(Action::PlatformSpecific(
-        platform_specific::Action::Wayland(wayland::Action::Popup(
-            wayland::popup::Action::Popup { popup },
-        )),
+        platform_specific::Action::Wayland(wayland::Action::Popup(wayland::popup::Action::Popup {
+            popup,
+        })),
     ))
 }
 
 /// <https://wayland.app/protocols/xdg-shell#xdg_popup:request:reposition>
-pub fn set_size<Message>(
-    id: SurfaceId,
-    width: u32,
-    height: u32,
-) -> Task<Message> {
+pub fn set_size<Message>(id: SurfaceId, width: u32, height: u32) -> Task<Message> {
     task::effect(Action::PlatformSpecific(
-        platform_specific::Action::Wayland(wayland::Action::Popup(
-            wayland::popup::Action::Size { id, width, height },
-        )),
+        platform_specific::Action::Wayland(wayland::Action::Popup(wayland::popup::Action::Size {
+            id,
+            width,
+            height,
+        })),
     ))
 }
 
 /// <https://wayland.app/protocols/xdg-shell#xdg_popup:request:reposition>
-pub fn reposition<Message>(
-    id: SurfaceId,
-    positioner: SctkPositioner,
-) -> Task<Message> {
+pub fn reposition<Message>(id: SurfaceId, positioner: SctkPositioner) -> Task<Message> {
     task::effect(Action::PlatformSpecific(
         platform_specific::Action::Wayland(wayland::Action::Popup(
             wayland::popup::Action::Reposition { id, positioner },

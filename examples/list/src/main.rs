@@ -1,8 +1,7 @@
 use iced::widget::{
-    button, center, column, container, list, row, scrollable,
-    space::horizontal, text,
+    button, center, column, container, list, row, scrollable, space::horizontal, text,
 };
-use iced::{Alignment, Element, Length, Task, Theme};
+use iced::{Alignment, Element, Length, Task, Theme, Widget};
 
 pub fn main() -> iced::Result {
     iced::application(List::new, List::update, List::view)
@@ -55,8 +54,7 @@ impl List {
                 container(list(&self.content, |index, (id, state)| {
                     row![
                         match state {
-                            State::Idle =>
-                                Element::from(text(format!("I am item {id}!"))),
+                            State::Idle => Element::new(text(format!("I am item {id}!"))),
                             State::Updated => center(
                                 column![
                                     text(format!("I am item {id}!")),
@@ -65,12 +63,11 @@ impl List {
                                 .spacing(20)
                             )
                             .height(300)
-                            .into(),
+                            .boxed(),
                         },
                         horizontal(),
                         button("Update").on_press_maybe(
-                            matches!(state, State::Idle)
-                                .then_some(Message::Update(index))
+                            matches!(state, State::Idle).then_some(Message::Update(index))
                         ),
                         button("Remove")
                             .on_press(Message::Remove(index))
@@ -79,23 +76,21 @@ impl List {
                     .spacing(10)
                     .padding(5)
                     .align_y(Alignment::Center)
-                    .into()
+                    .boxed()
                 }))
                 .padding(10),
             )
             .width(Length::Fill),
         )
         .padding(10)
-        .into()
+        .boxed()
     }
 }
 
 impl Default for List {
     fn default() -> Self {
         Self {
-            content: list::Content::from_iter(
-                (0..1_000).map(|id| (id, State::Idle)),
-            ),
+            content: list::Content::from_iter((0..1_000).map(|id| (id, State::Idle))),
         }
     }
 }

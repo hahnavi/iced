@@ -3,7 +3,7 @@
 //! # Example
 //! ```no_run
 //! # mod iced { pub mod widget { pub use iced_widget::*; } pub use iced_widget::Renderer; pub use iced_widget::core::*; }
-//! # pub type Element<'a, Message> = iced_widget::core::Element<'a, Message, iced_widget::Theme, iced_widget::Renderer>;
+//! # use iced::widget::Widget;
 //! #
 //! use iced::widget::qr_code;
 //!
@@ -16,8 +16,8 @@
 //!     // ...
 //! }
 //!
-//! fn view(state: &State) -> Element<'_, Message> {
-//!     qr_code(&state.data).into()
+//! fn view(state: &State) -> impl Widget<Message> {
+//!     qr_code(&state.data)
 //! }
 //! ```
 use crate::Renderer;
@@ -25,11 +25,9 @@ use crate::canvas;
 use crate::core::layout;
 use crate::core::mouse;
 use crate::core::renderer::{self, Renderer as _};
+use crate::core::widget::Meta;
 use crate::core::widget::tree::{self, Tree};
-use crate::core::{
-    Color, Element, Layout, Length, Pixels, Point, Rectangle, Size, Theme,
-    Vector, Widget,
-};
+use crate::core::{Color, Layout, Length, Pixels, Point, Rectangle, Size, Theme, Vector, Widget};
 
 use std::cell::RefCell;
 use thiserror::Error;
@@ -43,7 +41,7 @@ const QUIET_ZONE: usize = 2;
 /// # Example
 /// ```no_run
 /// # mod iced { pub mod widget { pub use iced_widget::*; } pub use iced_widget::Renderer; pub use iced_widget::core::*; }
-/// # pub type Element<'a, Message> = iced_widget::core::Element<'a, Message, iced_widget::Theme, iced_widget::Renderer>;
+/// # use iced::widget::Widget;
 /// #
 /// use iced::widget::qr_code;
 ///
@@ -56,8 +54,8 @@ const QUIET_ZONE: usize = 2;
 ///     // ...
 /// }
 ///
-/// fn view(state: &State) -> Element<'_, Message> {
-///     qr_code(&state.data).into()
+/// fn view(state: &State) -> impl Widget<Message> {
+///     qr_code(&state.data)
 /// }
 /// ```
 pub struct QRCode<'a, Theme = crate::Theme>
@@ -90,8 +88,7 @@ where
 
     /// Sets the size of the entire [`QRCode`].
     pub fn total_size(mut self, total_size: impl Into<Pixels>) -> Self {
-        self.cell_size =
-            total_size.into().0 / (self.data.width + 2 * QUIET_ZONE) as f32;
+        self.cell_size = total_size.into().0 / (self.data.width + 2 * QUIET_ZONE) as f32;
 
         self
     }
@@ -115,6 +112,8 @@ where
     }
 }
 
+impl<Theme> Meta for QRCode<'_, Theme> where Theme: Catalog {}
+
 impl<Message, Theme> Widget<Message, Theme, Renderer> for QRCode<'_, Theme>
 where
     Theme: Catalog,
@@ -134,16 +133,10 @@ where
         }
     }
 
-    fn layout(
-        &mut self,
-        _tree: &mut Tree,
-        _renderer: &Renderer,
-        _limits: &layout::Limits,
-    ) -> layout::Node {
-        let side_length =
-            (self.data.width + 2 * QUIET_ZONE) as f32 * self.cell_size;
+    fn layout(&mut self, tree: &mut Tree, _renderer: &Renderer, _limits: &layout::Limits) {
+        let side_length = (self.data.width + 2 * QUIET_ZONE) as f32 * self.cell_size;
 
-        layout::Node::new(Size::new(side_length, side_length))
+        tree.size = Size::new(side_length, side_length);
     }
 
     fn draw(
@@ -152,7 +145,7 @@ where
         renderer: &mut Renderer,
         theme: &Theme,
         _style: &renderer::Style,
-        layout: Layout<'_>,
+        layout: Layout,
         _cursor: mouse::Cursor,
         _viewport: &Rectangle,
     ) {
@@ -203,24 +196,11 @@ where
                 });
         });
 
-        renderer.with_translation(
-            bounds.position() - Point::ORIGIN,
-            |renderer| {
-                use crate::graphics::geometry::Renderer as _;
+        renderer.with_translation(bounds.position() - Point::ORIGIN, |renderer| {
+            use crate::graphics::geometry::Renderer as _;
 
-                renderer.draw_geometry(geometry);
-            },
-        );
-    }
-}
-
-impl<'a, Message, Theme> From<QRCode<'a, Theme>>
-    for Element<'a, Message, Theme, Renderer>
-where
-    Theme: Catalog + 'a,
-{
-    fn from(qr_code: QRCode<'a, Theme>) -> Self {
-        Self::new(qr_code)
+            renderer.draw_geometry(geometry);
+        });
     }
 }
 
@@ -250,10 +230,7 @@ impl Data {
         data: impl AsRef<[u8]>,
         error_correction: ErrorCorrection,
     ) -> Result<Self, Error> {
-        let encoded = qrcode::QrCode::with_error_correction_level(
-            data,
-            error_correction.into(),
-        )?;
+        let encoded = qrcode::QrCode::with_error_correction_level(data, error_correction.into())?;
 
         Ok(Self::build(encoded))
     }
@@ -265,11 +242,7 @@ impl Data {
         version: Version,
         error_correction: ErrorCorrection,
     ) -> Result<Self, Error> {
-        let encoded = qrcode::QrCode::with_version(
-            data,
-            version.into(),
-            error_correction.into(),
-        )?;
+        let encoded = qrcode::QrCode::with_version(data, version.into(), error_correction.into())?;
 
         Ok(Self::build(encoded))
     }
@@ -341,15 +314,11 @@ impl From<ErrorCorrection> for qrcode::EcLevel {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
 pub enum Error {
     /// The data is too long to encode in a QR code for the chosen [`Version`].
-    #[error(
-        "The data is too long to encode in a QR code for the chosen version"
-    )]
+    #[error("The data is too long to encode in a QR code for the chosen version")]
     DataTooLong,
 
     /// The chosen [`Version`] and [`ErrorCorrection`] combination is invalid.
-    #[error(
-        "The chosen version and error correction level combination is invalid."
-    )]
+    #[error("The chosen version and error correction level combination is invalid.")]
     InvalidVersion,
 
     /// One or more characters in the provided data are not supported by the
@@ -430,7 +399,7 @@ impl Catalog for Theme {
 
 /// The default style of a [`QRCode`].
 pub fn default(theme: &Theme) -> Style {
-    let palette = theme.palette();
+    let palette = theme.seed();
 
     Style {
         cell: palette.text,

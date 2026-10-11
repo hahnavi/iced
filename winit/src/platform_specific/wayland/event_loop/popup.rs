@@ -1,8 +1,8 @@
-use std::sync::Mutex;
-use std::sync::Arc;
-use cctk::sctk::shell::xdg::popup::PopupConfigure;
 use cctk::sctk::shell::xdg::popup::Popup;
-use iced_runtime::{platform_specific, core::window::Id};
+use cctk::sctk::shell::xdg::popup::PopupConfigure;
+use iced_runtime::{core::window::Id, platform_specific};
+use std::sync::Arc;
+use std::sync::Mutex;
 use wayland_client::protocol::wl_surface::WlSurface;
 use wayland_protocols::wp::fractional_scale::v1::client::wp_fractional_scale_v1::WpFractionalScaleV1;
 
@@ -24,9 +24,7 @@ impl PopupManager {
         id: &WlSurface,
     ) -> Option<(&mut Vec<SctkPopup>, usize)> {
         let pos = self.chains.iter().enumerate().find_map(move |(pos, c)| {
-            if let Some(pop_pos) =
-                c.into_iter().position(|p| p.popup.wl_surface() == id)
-            {
+            if let Some(pop_pos) = c.into_iter().position(|p| p.popup.wl_surface() == id) {
                 Some((pos, pop_pos))
             } else {
                 None
@@ -36,14 +34,9 @@ impl PopupManager {
         pos.map(|pos| (&mut self.chains[pos.0], pos.1))
     }
 
-    pub(crate) fn chain_for_popup(
-        &self,
-        id: &WlSurface,
-    ) -> Option<(&Vec<SctkPopup>, usize)> {
+    pub(crate) fn chain_for_popup(&self, id: &WlSurface) -> Option<(&Vec<SctkPopup>, usize)> {
         let pos = self.chains.iter().enumerate().find_map(move |(pos, c)| {
-            if let Some(pop_pos) =
-                c.into_iter().position(|p| p.popup.wl_surface() == id)
-            {
+            if let Some(pop_pos) = c.into_iter().position(|p| p.popup.wl_surface() == id) {
                 Some((pos, pop_pos))
             } else {
                 None
@@ -54,18 +47,15 @@ impl PopupManager {
     }
 
     pub(crate) fn popup(&self, id: &WlSurface) -> Option<&SctkPopup> {
-        self.chains.iter().find_map(move |c| {
-            c.into_iter().find(|p| p.popup.wl_surface() == id)
-        })
+        self.chains
+            .iter()
+            .find_map(move |c| c.into_iter().find(|p| p.popup.wl_surface() == id))
     }
 
-    pub(crate) fn popup_mut(
-        &mut self,
-        id: &WlSurface,
-    ) -> Option<&mut SctkPopup> {
-        self.chains.iter_mut().find_map(move |c| {
-            c.into_iter().find(|p| p.popup.wl_surface() == id)
-        })
+    pub(crate) fn popup_mut(&mut self, id: &WlSurface) -> Option<&mut SctkPopup> {
+        self.chains
+            .iter_mut()
+            .find_map(move |c| c.into_iter().find(|p| p.popup.wl_surface() == id))
     }
 
     pub(crate) fn popup_id(&self, id: Id) -> Option<&SctkPopup> {
@@ -93,9 +83,7 @@ impl PopupManager {
     }
 
     pub(crate) fn push(&mut self, popup: SctkPopup) {
-        if let Some((chain, _pos)) =
-            self.chain_for_popup_mut(popup.data.parent.wl_surface())
-        {
+        if let Some((chain, _pos)) = self.chain_for_popup_mut(popup.data.parent.wl_surface()) {
             // TODO should we return an error if a popup is attempted to be added to a non-leaf popup of a chain?
             chain.push(popup);
         } else {
@@ -107,14 +95,9 @@ impl PopupManager {
         }
     }
 
-    pub(crate) fn remove(
-        &mut self,
-        popup: &WlSurface,
-    ) -> Option<impl Iterator<Item = SctkPopup>> {
+    pub(crate) fn remove(&mut self, popup: &WlSurface) -> Option<impl Iterator<Item = SctkPopup>> {
         // must perform cleanup so that the popups are dropped in the correct order
-        let ret = if let Some((chain, mut pos)) =
-            self.chain_for_popup_mut(popup)
-        {
+        let ret = if let Some((chain, mut pos)) = self.chain_for_popup_mut(popup) {
             // TODO should we return an error if a popup is attempted to be added to a non-leaf popup of a chain?
             while let Some(p) = pos.checked_sub(1).and_then(|p| chain.get(p)) {
                 if p.close_with_children {
@@ -151,8 +134,7 @@ impl PopupManager {
 pub struct SctkPopup {
     pub(crate) popup: Popup,
     pub(crate) last_configure: Option<PopupConfigure>,
-    pub(crate) _pending_requests:
-        Vec<platform_specific::wayland::popup::Action>,
+    pub(crate) _pending_requests: Vec<platform_specific::wayland::popup::Action>,
     pub(crate) data: SctkPopupData,
     pub(crate) common: Arc<Mutex<Common>>,
     pub(crate) wp_fractional_scale: Option<WpFractionalScaleV1>,

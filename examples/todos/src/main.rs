@@ -1,12 +1,12 @@
 use iced::keyboard;
 use iced::widget::{
-    self, Text, button, center, center_x, checkbox, column, keyed_column,
-    operation, row, scrollable, text, text_input,
+    self, Text, button, center, center_x, checkbox, column, container, keyed_column, operation,
+    row, scrollable, sticky, text, text_input,
 };
 use iced::window;
 use iced::{
-    Center, Element, Fill, Font, Function, Preset, Program, Subscription,
-    Task as Command, Theme, application::Application,
+    Application, Center, Fill, Fit, Function, Preset, Program, Subscription, Task as Command,
+    Theme, Widget,
 };
 
 use serde::{Deserialize, Serialize};
@@ -19,12 +19,11 @@ pub fn main() -> iced::Result {
     application().run()
 }
 
-fn application() -> Application<impl Program<Message = Message, Theme = Theme>>
-{
+fn application() -> Application<impl Program<Message = Message, Theme = Theme>> {
     iced::application(Todos::new, Todos::update, Todos::view)
         .subscription(Todos::subscription)
         .title(Todos::title)
-        .font(Todos::ICON_FONT)
+        .fonts([Todos::ICON_FONT])
         .window_size((500.0, 800.0))
         .presets(presets())
 }
@@ -93,7 +92,10 @@ impl Todos {
                     _ => {}
                 }
 
-                operation::focus("new-task")
+                Command::batch([
+                    operation::focus("new-task"),
+                    operation::text_input::move_cursor_to_end("new-task"),
+                ])
             }
             Todos::Loaded(state) => {
                 let mut saved = false;
@@ -106,9 +108,7 @@ impl Todos {
                     }
                     Message::CreateTask => {
                         if !state.input_value.is_empty() {
-                            state
-                                .tasks
-                                .push(Task::new(state.input_value.clone()));
+                            state.tasks.push(Task::new(state.input_value.clone()));
                             state.input_value.clear();
                         }
 
@@ -126,8 +126,7 @@ impl Todos {
                     }
                     Message::TaskMessage(i, task_message) => {
                         if let Some(task) = state.tasks.get_mut(i) {
-                            let should_focus =
-                                matches!(task_message, TaskMessage::Edit);
+                            let should_focus = matches!(task_message, TaskMessage::Edit);
 
                             task.update(task_message);
 
@@ -135,7 +134,7 @@ impl Todos {
                                 let id = Task::text_input_id(i);
                                 Command::batch(vec![
                                     operation::focus(id.clone()),
-                                    operation::select_all(id),
+                                    operation::text_input::select_all(id),
                                 ])
                             } else {
                                 Command::none()
@@ -157,8 +156,9 @@ impl Todos {
                             operation::focus_next()
                         }
                     }
-                    Message::ToggleFullscreen(mode) => window::latest()
-                        .and_then(move |window| window::set_mode(window, mode)),
+                    Message::ToggleFullscreen(mode) => {
+                        window::latest().and_then(move |window| window::set_mode(window, mode))
+                    }
                     Message::Loaded(_) => Command::none(),
                 };
 
@@ -188,64 +188,70 @@ impl Todos {
         }
     }
 
-    fn view(&self) -> Element<'_, Message> {
+    fn view(&self) -> impl Widget<Message> {
         match self {
-            Todos::Loading => loading_message(),
+            Todos::Loading => loading_message().boxed(),
             Todos::Loaded(State {
                 input_value,
                 filter,
                 tasks,
                 ..
             }) => {
-                let title = text("todos")
-                    .width(Fill)
-                    .size(100)
-                    .style(subtle)
-                    .align_x(Center);
+                let header = {
+                    let title = text("todos")
+                        .width(Fill)
+                        .size(100)
+                        .style(subtle)
+                        .align_x(Center);
 
-                let input = text_input("What needs to be done?", input_value)
-                    .id("new-task")
-                    .on_input(Message::InputChanged)
-                    .on_submit(Message::CreateTask)
-                    .padding(15)
-                    .size(30)
-                    .align_x(Center);
+                    let input = text_input("What needs to be done?", input_value)
+                        .id("new-task")
+                        .on_input(Message::InputChanged)
+                        .on_submit(Message::CreateTask)
+                        .padding(15)
+                        .size(30)
+                        .align_x(Center);
 
-                let controls = view_controls(tasks, *filter);
-                let filtered_tasks =
-                    tasks.iter().filter(|task| filter.matches(task));
+                    let controls = view_controls(tasks, *filter);
 
-                let tasks: Element<_> = if filtered_tasks.count() > 0 {
+                    column![title, input, controls].spacing(20)
+                };
+
+                let filtered_tasks = tasks.iter().filter(|task| filter.matches(task));
+
+                let tasks = if filtered_tasks.count() > 0 {
                     keyed_column(
                         tasks
                             .iter()
                             .enumerate()
                             .filter(|(_, task)| filter.matches(task))
                             .map(|(i, task)| {
-                                (
-                                    task.id,
-                                    task.view(i)
-                                        .map(Message::TaskMessage.with(i)),
-                                )
+                                (task.id, task.view(i).map(Message::TaskMessage.with(i)))
                             }),
                     )
                     .spacing(10)
-                    .into()
+                    .boxed()
                 } else {
                     empty_message(match filter {
                         Filter::All => "You have not created a task yet...",
                         Filter::Active => "All your tasks are done! :D",
-                        Filter::Completed => {
-                            "You have not completed a task yet..."
-                        }
+                        Filter::Completed => "You have not completed a task yet...",
                     })
+                    .boxed()
                 };
 
-                let content = column![title, input, controls, tasks]
-                    .spacing(20)
-                    .max_width(800);
+                let content = column![
+                    sticky(container(header).style(|theme: &Theme| {
+                        container::Style::default().background(theme.seed().background)
+                    })),
+                    tasks
+                ]
+                .spacing(20)
+                .width(Fit.max(400));
 
-                scrollable(center_x(content).padding(40)).into()
+                container(scrollable(center_x(content)).spacing(10))
+                    .padding(10)
+                    .boxed()
             }
         }
     }
@@ -336,7 +342,7 @@ impl Task {
         }
     }
 
-    fn view(&self, i: usize) -> Element<'_, TaskMessage> {
+    fn view(&self, i: usize) -> impl Widget<TaskMessage> {
         match &self.state {
             TaskState::Idle => {
                 let checkbox = checkbox(self.completed)
@@ -344,7 +350,7 @@ impl Task {
                     .on_toggle(TaskMessage::Completed)
                     .width(Fill)
                     .size(17)
-                    .text_shaping(text::Shaping::Advanced);
+                    .shaping(text::Shaping::Advanced);
 
                 row![
                     checkbox,
@@ -355,39 +361,31 @@ impl Task {
                 ]
                 .spacing(20)
                 .align_y(Center)
-                .into()
+                .boxed()
             }
             TaskState::Editing => {
-                let text_input =
-                    text_input("Describe your task...", &self.description)
-                        .id(Self::text_input_id(i))
-                        .on_input(TaskMessage::DescriptionEdited)
-                        .on_submit(TaskMessage::FinishEdition)
-                        .padding(10);
+                let text_input = text_input("Describe your task...", &self.description)
+                    .id(Self::text_input_id(i))
+                    .on_input(TaskMessage::DescriptionEdited)
+                    .on_submit(TaskMessage::FinishEdition)
+                    .padding(10);
 
                 row![
                     text_input,
-                    button(
-                        row![delete_icon(), "Delete"]
-                            .spacing(10)
-                            .align_y(Center)
-                    )
-                    .on_press(TaskMessage::Delete)
-                    .padding(10)
-                    .style(button::danger)
+                    button(row![delete_icon(), "Delete"].spacing(10).align_y(Center))
+                        .on_press(TaskMessage::Delete)
+                        .padding(10)
+                        .style(button::danger)
                 ]
                 .spacing(20)
                 .align_y(Center)
-                .into()
+                .boxed()
             }
         }
     }
 }
 
-fn view_controls(
-    tasks: &[Task],
-    current_filter: Filter,
-) -> Element<'_, Message> {
+fn view_controls(tasks: &[Task], current_filter: Filter) -> impl Widget<Message> {
     let tasks_left = tasks.iter().filter(|task| !task.completed).count();
 
     let filter_button = |label, filter, current_filter| {
@@ -417,12 +415,9 @@ fn view_controls(
     ]
     .spacing(20)
     .align_y(Center)
-    .into()
 }
 
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum Filter {
     #[default]
     All,
@@ -440,11 +435,11 @@ impl Filter {
     }
 }
 
-fn loading_message<'a>() -> Element<'a, Message> {
-    center(text("Loading...").width(Fill).align_x(Center).size(50)).into()
+fn loading_message() -> impl Widget<Message> {
+    center(text("Loading...").width(Fill).align_x(Center).size(50))
 }
 
-fn empty_message(message: &str) -> Element<'_, Message> {
+fn empty_message(message: &str) -> impl Widget<Message> {
     center(
         text(message)
             .width(Fill)
@@ -452,16 +447,15 @@ fn empty_message(message: &str) -> Element<'_, Message> {
             .align_x(Center)
             .style(subtle),
     )
-    .height(200u16)
-    .into()
+    .height(200)
 }
 
 // Fonts
 
 fn icon(unicode: char) -> Text<'static> {
     text(unicode.to_string())
-        .font(Font::with_name("Iced-Todos-Icons"))
-        .width(20u16)
+        .font("Iced-Todos-Icons")
+        .width(20)
         .align_x(Center)
         .shaping(text::Shaping::Basic)
 }
@@ -476,8 +470,8 @@ fn delete_icon() -> Text<'static> {
 
 fn subtle(theme: &Theme) -> text::Style {
     text::Style {
-        color: Some(theme.extended_palette().background.strongest.color),
-        ..text::Style::default()
+        color: Some(theme.palette().background.strongest.color),
+        selection: None,
     }
 }
 
@@ -504,13 +498,12 @@ enum SaveError {
 #[cfg(not(target_arch = "wasm32"))]
 impl SavedState {
     fn path() -> std::path::PathBuf {
-        let mut path = if let Some(project_dirs) =
-            directories::ProjectDirs::from("rs", "Iced", "Todos")
-        {
-            project_dirs.data_dir().into()
-        } else {
-            std::env::current_dir().unwrap_or_default()
-        };
+        let mut path =
+            if let Some(project_dirs) = directories::ProjectDirs::from("rs", "Iced", "Todos") {
+                project_dirs.data_dir().into()
+            } else {
+                std::env::current_dir().unwrap_or_default()
+            };
 
         path.push("todos.json");
 
@@ -528,8 +521,7 @@ impl SavedState {
     async fn save(self) -> Result<(), SaveError> {
         use iced::time::milliseconds;
 
-        let json = serde_json::to_string_pretty(&self)
-            .map_err(|_| SaveError::Format)?;
+        let json = serde_json::to_string_pretty(&self).map_err(|_| SaveError::Format)?;
 
         let path = Self::path();
 
@@ -574,15 +566,13 @@ impl SavedState {
     async fn save(self) -> Result<(), SaveError> {
         let storage = Self::storage().ok_or(SaveError::Write)?;
 
-        let json = serde_json::to_string_pretty(&self)
-            .map_err(|_| SaveError::Format)?;
+        let json = serde_json::to_string_pretty(&self).map_err(|_| SaveError::Format)?;
 
         storage
             .set_item("state", &json)
             .map_err(|_| SaveError::Write)?;
 
-        let _ =
-            wasmtimer::tokio::sleep(std::time::Duration::from_secs(2)).await;
+        let _ = wasmtimer::tokio::sleep(std::time::Duration::from_secs(2)).await;
 
         Ok(())
     }

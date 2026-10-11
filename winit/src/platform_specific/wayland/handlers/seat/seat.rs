@@ -82,10 +82,7 @@ impl SeatHandler for SctkState {
                     None,
                     self.loop_handle.clone(),
                     Box::new(move |state, kbd: &WlKeyboard, e| {
-                        let Some(my_seat) = state
-                            .seats
-                            .iter_mut()
-                            .find(|s| s.seat == seat_clone_2)
+                        let Some(my_seat) = state.seats.iter_mut().find(|s| s.seat == seat_clone_2)
                         else {
                             return;
                         };
@@ -100,10 +97,7 @@ impl SeatHandler for SctkState {
                     }),
                 ) {
                     self.sctk_events.push(SctkEvent::SeatEvent {
-                        variant: SeatEventVariant::NewCapability(
-                            capability,
-                            kbd.id(),
-                        ),
+                        variant: SeatEventVariant::NewCapability(capability, kbd.id()),
                         id: seat.clone(),
                     });
                     _ = my_seat.kbd.replace(kbd);
@@ -120,10 +114,7 @@ impl SeatHandler for SctkState {
                     ThemeSpec::default(),
                 ) {
                     self.sctk_events.push(SctkEvent::SeatEvent {
-                        variant: SeatEventVariant::NewCapability(
-                            capability,
-                            ptr.pointer().id(),
-                        ),
+                        variant: SeatEventVariant::NewCapability(capability, ptr.pointer().id()),
                         id: seat.clone(),
                     });
                     _ = my_seat.ptr.replace(ptr);
@@ -132,10 +123,7 @@ impl SeatHandler for SctkState {
             cctk::sctk::seat::Capability::Touch => {
                 if let Some(touch) = self.seat_state.get_touch(qh, &seat).ok() {
                     self.sctk_events.push(SctkEvent::SeatEvent {
-                        variant: SeatEventVariant::NewCapability(
-                            capability,
-                            touch.id(),
-                        ),
+                        variant: SeatEventVariant::NewCapability(capability, touch.id()),
                         id: seat.clone(),
                     });
                     _ = my_seat.touch.replace(touch);
@@ -150,8 +138,7 @@ impl SeatHandler for SctkState {
             .then_some(self.text_input_manager.as_ref())
             .flatten()
         {
-            self.text_input =
-                Some(Arc::new((text_input_manager).get_text_input(&seat, &qh)));
+            self.text_input = Some(Arc::new((text_input_manager).get_text_input(&seat, &qh)));
         }
     }
 
@@ -173,10 +160,7 @@ impl SeatHandler for SctkState {
             cctk::sctk::seat::Capability::Keyboard => {
                 if let Some(kbd) = my_seat.kbd.take() {
                     self.sctk_events.push(SctkEvent::SeatEvent {
-                        variant: SeatEventVariant::RemoveCapability(
-                            capability,
-                            kbd.id(),
-                        ),
+                        variant: SeatEventVariant::RemoveCapability(capability, kbd.id()),
                         id: seat.clone(),
                     });
                 }
@@ -184,10 +168,7 @@ impl SeatHandler for SctkState {
             cctk::sctk::seat::Capability::Pointer => {
                 if let Some(ptr) = my_seat.ptr.take() {
                     self.sctk_events.push(SctkEvent::SeatEvent {
-                        variant: SeatEventVariant::RemoveCapability(
-                            capability,
-                            ptr.pointer().id(),
-                        ),
+                        variant: SeatEventVariant::RemoveCapability(capability, ptr.pointer().id()),
                         id: seat.clone(),
                     });
                 }
@@ -195,10 +176,7 @@ impl SeatHandler for SctkState {
             cctk::sctk::seat::Capability::Touch => {
                 if let Some(touch) = my_seat.touch.take() {
                     self.sctk_events.push(SctkEvent::SeatEvent {
-                        variant: SeatEventVariant::RemoveCapability(
-                            capability,
-                            touch.id(),
-                        ),
+                        variant: SeatEventVariant::RemoveCapability(capability, touch.id()),
                         id: seat.clone(),
                     });
                 }

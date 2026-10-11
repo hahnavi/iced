@@ -3,13 +3,17 @@
 mod null;
 
 use crate::image;
+use crate::text;
 use crate::{
-    Background, Border, Color, Font, Pixels, Rectangle, Shadow, Size,
-    Transformation, Vector,
+    Background, Border, Color, Font, Pixels, Rectangle, Shadow, Size, Transformation, Vector,
 };
 
+/// Whether anti-aliasing should be avoided by snapping primitive coordinates to the
+/// pixel grid.
+pub const CRISP: bool = cfg!(feature = "crisp");
+
 /// A component that can be used by widgets to draw themselves on a screen.
-pub trait Renderer {
+pub trait Renderer: 'static {
     /// Starts recording a new layer.
     fn start_layer(&mut self, bounds: Rectangle);
 
@@ -36,42 +40,60 @@ pub trait Renderer {
     fn end_transformation(&mut self);
 
     /// Applies a [`Transformation`] to the primitives recorded in the given closure.
-    fn with_transformation(
-        &mut self,
-        transformation: Transformation,
-        f: impl FnOnce(&mut Self),
-    ) {
+    fn with_transformation(&mut self, transformation: Transformation, f: impl FnOnce(&mut Self)) {
         self.start_transformation(transformation);
         f(self);
         self.end_transformation();
     }
 
     /// Applies a translation to the primitives recorded in the given closure.
-    fn with_translation(
-        &mut self,
-        translation: Vector,
-        f: impl FnOnce(&mut Self),
-    ) {
-        self.with_transformation(
-            Transformation::translate(translation.x, translation.y),
-            f,
-        );
+    fn with_translation(&mut self, translation: Vector, f: impl FnOnce(&mut Self)) {
+        self.with_transformation(Transformation::translate(translation.x, translation.y), f);
     }
 
     /// Fills a [`Quad`] with the provided [`Background`].
     fn fill_quad(&mut self, quad: Quad, background: impl Into<Background>);
 
+    /// Creates an [`image::Allocation`] for the given [`image::Handle`] and calls the given callback with it.
+    fn allocate_image(
+        &self,
+        handle: &image::Handle,
+        callback: impl FnOnce(Result<image::Allocation, image::Error>) + Send + 'static,
+    );
+
+    /// Provides hints to the [`Renderer`] about the rendering target.
+    ///
+    /// This may be used internally by the [`Renderer`] to perform optimizations
+    /// and/or improve rendering quality.
+    ///
+    /// For instance, providing a [`Scale`] may be used by some renderers to
+    /// perform metrics hinting internally in physical coordinates while keeping
+    /// layout coordinates logical and, therefore, maintain linearity.
+    fn hint(&mut self, scale: Scale);
+
+    /// Returns the last [`Scale`] provided as a [`hint`](Self::hint).
+    fn scale(&self) -> Option<Scale>;
+
+    /// Returns the last hint factor provided as a [`hint`](Self::hint),
+    /// only if [`Settings::metrics_hinting`] is enabled.
+    fn hint_factor(&self) -> Option<f32> {
+        if !self.settings().metrics_hinting {
+            return None;
+        }
+
+        self.scale().map(Scale::total)
+    }
+
     /// Resets the [`Renderer`] to start drawing in the `new_bounds` from scratch.
     fn reset(&mut self, new_bounds: Rectangle);
 
-    /// Creates an [`image::Allocation`] for the given [`image::Handle`] and calls the given callback with it.
-    fn allocate_image(
-        &mut self,
-        handle: &image::Handle,
-        callback: impl FnOnce(Result<image::Allocation, image::Error>)
-        + Send
-        + 'static,
-    );
+    /// Returns the [`Settings`] of this [`Renderer`].
+    fn settings(&self) -> Settings;
+
+    /// Polls any concurrent computations that may be pending in the [`Renderer`].
+    ///
+    /// By default, it does nothing.
+    fn tick(&mut self) {}
 }
 
 /// A polygon with four sides.
@@ -96,7 +118,7 @@ impl Default for Quad {
             bounds: Rectangle::with_size(Size::ZERO),
             border: Border::default(),
             shadow: Shadow::default(),
-            snap: cfg!(feature = "crisp"),
+            snap: CRISP,
         }
     }
 }
@@ -126,11 +148,7 @@ impl Default for Style {
 /// a window nor a compositor.
 pub trait Headless {
     /// Creates a new [`Headless`] renderer;
-    fn new(
-        default_font: Font,
-        default_text_size: Pixels,
-        backend: Option<&str>,
-    ) -> impl Future<Output = Option<Self>>
+    fn new(settings: Settings, backend: Option<&str>) -> impl Future<Output = Option<Self>>
     where
         Self: Sized;
 
@@ -148,4 +166,67 @@ pub trait Headless {
         scale_factor: f32,
         background_color: Color,
     ) -> Vec<u8>;
+}
+
+/// The settings of a [`Renderer`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Settings {
+    /// The default [`Font`] to use.
+    pub font: Font,
+
+    /// The default size of text.
+    ///
+    /// By default, it will be set to `16.0`.
+    pub text_size: Pixels,
+
+    /// The default line height of text.
+    ///
+    /// By default, it will be set to `LineHeight::Relative(1.375)`.
+    pub line_height: text::LineHeight,
+
+    /// Whether the [`Renderer`] should perform metrics hinting.
+    ///
+    /// By default, it is enabled.
+    pub metrics_hinting: bool,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            font: Font::DEFAULT,
+            text_size: Pixels(16.0),
+            line_height: text::LineHeight::default(),
+            metrics_hinting: true,
+        }
+    }
+}
+
+/// The scale factor of a [`Renderer`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Scale {
+    /// The global scale factor of the window.
+    ///
+    /// This is normally controlled by the OS, and applied globally to all apps.
+    pub window: f32,
+
+    /// The local scale factor of the application.
+    pub application: f32,
+}
+
+impl Scale {
+    /// Returns the total scale factor applied by the [`Renderer`].
+    ///
+    /// This is the product of the window and application scale factors.
+    pub fn total(self) -> f32 {
+        self.window * self.application
+    }
+}
+
+impl Default for Scale {
+    fn default() -> Self {
+        Self {
+            window: 1.0,
+            application: 1.0,
+        }
+    }
 }

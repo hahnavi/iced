@@ -2,9 +2,7 @@
 
 use crate::{
     event_loop::state::FrameStatus,
-    platform_specific::wayland::{
-        event_loop::state::SctkState, sctk_event::SctkEvent,
-    },
+    platform_specific::wayland::{event_loop::state::SctkState, sctk_event::SctkEvent},
 };
 use cctk::sctk::{
     delegate_touch,
@@ -59,9 +57,7 @@ impl TouchHandler for SctkState {
         _time: u32,
         id: i32,
     ) {
-        let Some(my_seat) =
-            self.seats.iter().find(|s| s.touch.as_ref() == Some(touch))
-        else {
+        let Some(my_seat) = self.seats.iter().find(|s| s.touch.as_ref() == Some(touch)) else {
             return;
         };
 
@@ -84,9 +80,7 @@ impl TouchHandler for SctkState {
         id: i32,
         position: (f64, f64),
     ) {
-        let Some(my_seat) =
-            self.seats.iter().find(|s| s.touch.as_ref() == Some(touch))
-        else {
+        let Some(my_seat) = self.seats.iter().find(|s| s.touch.as_ref() == Some(touch)) else {
             return;
         };
 
@@ -121,25 +115,10 @@ impl TouchHandler for SctkState {
     ) {
     }
 
-    fn orientation(
-        &mut self,
-        _: &Connection,
-        _: &QueueHandle<Self>,
-        _: &WlTouch,
-        _: i32,
-        _: f64,
-    ) {
-    }
+    fn orientation(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &WlTouch, _: i32, _: f64) {}
 
-    fn cancel(
-        &mut self,
-        _: &Connection,
-        _: &QueueHandle<Self>,
-        touch: &WlTouch,
-    ) {
-        let Some(my_seat) =
-            self.seats.iter().find(|s| s.touch.as_ref() == Some(touch))
-        else {
+    fn cancel(&mut self, _: &Connection, _: &QueueHandle<Self>, touch: &WlTouch) {
+        let Some(my_seat) = self.seats.iter().find(|s| s.touch.as_ref() == Some(touch)) else {
             return;
         };
 

@@ -1,7 +1,7 @@
 //! This example showcases a drawing a quad.
 use iced::border;
 use iced::widget::{center, column, slider, text, toggler};
-use iced::{Center, Color, Element, Shadow, Vector};
+use iced::{Center, Color, Fit, Shadow, Vector, Widget};
 
 pub fn main() -> iced::Result {
     iced::run(Example::update, Example::view)
@@ -74,7 +74,7 @@ impl Example {
         }
     }
 
-    fn view(&self) -> Element<'_, Message> {
+    fn view(&self) -> impl Widget<Message> {
         let border::Radius {
             top_left,
             top_right,
@@ -99,27 +99,23 @@ impl Example {
             text!("Radius: {top_left:.2}/{top_right:.2}/{bottom_right:.2}/{bottom_left:.2}"),
             slider(1.0..=200.0, top_left, Message::RadiusTopLeftChanged).step(0.01),
             slider(1.0..=200.0, top_right, Message::RadiusTopRightChanged).step(0.01),
-            slider(1.0..=200.0, bottom_right, Message::RadiusBottomRightChanged)
-                .step(0.01),
-            slider(1.0..=200.0, bottom_left, Message::RadiusBottomLeftChanged)
-                .step(0.01),
-            slider(0.0..=10.0, self.border_width, Message::BorderWidthChanged)
-                .step(0.01),
+            slider(1.0..=200.0, bottom_right, Message::RadiusBottomRightChanged).step(0.01),
+            slider(1.0..=200.0, bottom_left, Message::RadiusBottomLeftChanged).step(0.01),
+            slider(0.0..=10.0, self.border_width, Message::BorderWidthChanged).step(0.01),
             text!("Shadow: {sx:.2}x{sy:.2}, {sr:.2}"),
-            slider(-100.0..=100.0, sx, Message::ShadowXOffsetChanged)
-                .step(0.01),
-            slider(-100.0..=100.0, sy, Message::ShadowYOffsetChanged)
-                .step(0.01),
-            slider(0.0..=100.0, sr, Message::ShadowBlurRadiusChanged)
-                .step(0.01),
-            toggler(self.snap).label("Snap to pixel grid").on_toggle(Message::SnapToggled),
+            slider(-100.0..=100.0, sx, Message::ShadowXOffsetChanged).step(0.01),
+            slider(-100.0..=100.0, sy, Message::ShadowYOffsetChanged).step(0.01),
+            slider(0.0..=100.0, sr, Message::ShadowBlurRadiusChanged).step(0.01),
+            toggler(self.snap)
+                .label("Snap to pixel grid")
+                .on_toggle(Message::SnapToggled),
         ]
         .padding(20)
         .spacing(20)
-        .max_width(500)
+        .width(Fit.max(500))
         .align_x(Center);
 
-        center(content).into()
+        center(content)
     }
 }
 
@@ -135,7 +131,7 @@ mod quad {
     use iced::advanced::widget::{self, Widget};
     use iced::border;
     use iced::mouse;
-    use iced::{Border, Color, Element, Length, Rectangle, Shadow, Size};
+    use iced::{Border, Color, Length, Rectangle, Shadow, Size};
 
     pub struct CustomQuad {
         size: f32,
@@ -163,6 +159,8 @@ mod quad {
         }
     }
 
+    impl widget::Meta for CustomQuad {}
+
     impl<Message, Theme, Renderer> Widget<Message, Theme, Renderer> for CustomQuad
     where
         Renderer: renderer::Renderer,
@@ -176,11 +174,11 @@ mod quad {
 
         fn layout(
             &mut self,
-            _tree: &mut widget::Tree,
+            tree: &mut widget::Tree,
             _renderer: &Renderer,
             _limits: &layout::Limits,
-        ) -> layout::Node {
-            layout::Node::new(Size::new(self.size, self.size))
+        ) {
+            tree.size = Size::new(self.size, self.size);
         }
 
         fn draw(
@@ -189,7 +187,7 @@ mod quad {
             renderer: &mut Renderer,
             _theme: &Theme,
             _style: &renderer::Style,
-            layout: Layout<'_>,
+            layout: Layout,
             _cursor: mouse::Cursor,
             _viewport: &Rectangle,
         ) {
@@ -206,12 +204,6 @@ mod quad {
                 },
                 Color::BLACK,
             );
-        }
-    }
-
-    impl<Message> From<CustomQuad> for Element<'_, Message> {
-        fn from(circle: CustomQuad) -> Self {
-            Self::new(circle)
         }
     }
 }

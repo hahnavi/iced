@@ -13,14 +13,9 @@ use wayland_client::protocol::wl_surface::WlSurface;
 
 /// Imports the toplevel with the given xdg-foreign handle as the parent of the
 /// window.
-pub fn set_parent<Message>(
-    window: SurfaceId,
-    parent: Option<String>,
-) -> Task<Message> {
+pub fn set_parent<Message>(window: SurfaceId, parent: Option<String>) -> Task<Message> {
     task::effect(Action::PlatformSpecific(
-        platform_specific::Action::Wayland(wayland::Action::SetWindowParent(
-            window, parent,
-        )),
+        platform_specific::Action::Wayland(wayland::Action::SetWindowParent(window, parent)),
     ))
 }
 
@@ -28,9 +23,7 @@ pub fn set_parent<Message>(
 /// the window is closed.
 pub fn set_modal<Message>(window: SurfaceId, modal: bool) -> Task<Message> {
     task::effect(Action::PlatformSpecific(
-        platform_specific::Action::Wayland(wayland::Action::SetWindowModal(
-            window, modal,
-        )),
+        platform_specific::Action::Wayland(wayland::Action::SetWindowModal(window, modal)),
     ))
 }
 

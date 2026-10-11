@@ -1,21 +1,35 @@
 //! Operate on widgets that can be scrolled.
+use crate::widget::operation::Animation;
 use crate::widget::{Id, Operation};
-use crate::{Rectangle, Vector};
+use crate::{Rectangle, Size, Vector};
 
 /// The internal state of a widget that can be scrolled.
 pub trait Scrollable {
     /// Snaps the scroll of the widget to the given `percentage` along the horizontal & vertical axis.
-    fn snap_to(&mut self, offset: RelativeOffset<Option<f32>>);
+    fn snap_to(
+        &mut self,
+        offset: RelativeOffset<Option<f32>>,
+        animation: Animation,
+        bounds: Rectangle,
+        content: Size,
+    );
 
     /// Scroll the widget to the given [`AbsoluteOffset`] along the horizontal & vertical axis.
-    fn scroll_to(&mut self, offset: AbsoluteOffset<Option<f32>>);
+    fn scroll_to(
+        &mut self,
+        offset: AbsoluteOffset<Option<f32>>,
+        animation: Animation,
+        bounds: Rectangle,
+        content: Size,
+    );
 
     /// Scroll the widget by the given [`AbsoluteOffset`] along the horizontal & vertical axis.
     fn scroll_by(
         &mut self,
         offset: AbsoluteOffset,
+        animation: Animation,
         bounds: Rectangle,
-        content_bounds: Rectangle,
+        content: Size,
     );
 }
 
@@ -24,10 +38,12 @@ pub trait Scrollable {
 pub fn snap_to<T>(
     target: Id,
     offset: RelativeOffset<Option<f32>>,
+    animation: Animation,
 ) -> impl Operation<T> {
     struct SnapTo {
         target: Id,
         offset: RelativeOffset<Option<f32>>,
+        animation: Animation,
     }
 
     impl<T> Operation<T> for SnapTo {
@@ -38,18 +54,22 @@ pub fn snap_to<T>(
         fn scrollable(
             &mut self,
             id: Option<&Id>,
-            _bounds: Rectangle,
-            _content_bounds: Rectangle,
+            bounds: Rectangle,
+            content: Size,
             _translation: Vector,
             state: &mut dyn Scrollable,
         ) {
             if Some(&self.target) == id {
-                state.snap_to(self.offset);
+                state.snap_to(self.offset, self.animation, bounds, content);
             }
         }
     }
 
-    SnapTo { target, offset }
+    SnapTo {
+        target,
+        offset,
+        animation,
+    }
 }
 
 /// Produces an [`Operation`] that scrolls the widget with the given [`Id`] to
@@ -57,10 +77,12 @@ pub fn snap_to<T>(
 pub fn scroll_to<T>(
     target: Id,
     offset: AbsoluteOffset<Option<f32>>,
+    animation: Animation,
 ) -> impl Operation<T> {
     struct ScrollTo {
         target: Id,
         offset: AbsoluteOffset<Option<f32>>,
+        animation: Animation,
     }
 
     impl<T> Operation<T> for ScrollTo {
@@ -71,26 +93,31 @@ pub fn scroll_to<T>(
         fn scrollable(
             &mut self,
             id: Option<&Id>,
-            _bounds: Rectangle,
-            _content_bounds: Rectangle,
+            bounds: Rectangle,
+            content: Size,
             _translation: Vector,
             state: &mut dyn Scrollable,
         ) {
             if Some(&self.target) == id {
-                state.scroll_to(self.offset);
+                state.scroll_to(self.offset, self.animation, bounds, content);
             }
         }
     }
 
-    ScrollTo { target, offset }
+    ScrollTo {
+        target,
+        offset,
+        animation,
+    }
 }
 
 /// Produces an [`Operation`] that scrolls the widget with the given [`Id`] by
 /// the provided [`AbsoluteOffset`].
-pub fn scroll_by<T>(target: Id, offset: AbsoluteOffset) -> impl Operation<T> {
+pub fn scroll_by<T>(target: Id, offset: AbsoluteOffset, animation: Animation) -> impl Operation<T> {
     struct ScrollBy {
         target: Id,
         offset: AbsoluteOffset,
+        animation: Animation,
     }
 
     impl<T> Operation<T> for ScrollBy {
@@ -102,17 +129,21 @@ pub fn scroll_by<T>(target: Id, offset: AbsoluteOffset) -> impl Operation<T> {
             &mut self,
             id: Option<&Id>,
             bounds: Rectangle,
-            content_bounds: Rectangle,
+            content: Size,
             _translation: Vector,
             state: &mut dyn Scrollable,
         ) {
             if Some(&self.target) == id {
-                state.scroll_by(self.offset, bounds, content_bounds);
+                state.scroll_by(self.offset, self.animation, bounds, content);
             }
         }
     }
 
-    ScrollBy { target, offset }
+    ScrollBy {
+        target,
+        offset,
+        animation,
+    }
 }
 
 /// The amount of absolute offset in each direction of a [`Scrollable`].
@@ -129,6 +160,17 @@ impl From<AbsoluteOffset> for AbsoluteOffset<Option<f32>> {
         Self {
             x: Some(offset.x),
             y: Some(offset.y),
+        }
+    }
+}
+
+impl std::ops::Add<Vector> for AbsoluteOffset {
+    type Output = Self;
+
+    fn add(self, translation: Vector) -> Self::Output {
+        Self {
+            x: self.x + translation.x,
+            y: self.y + translation.y,
         }
     }
 }

@@ -1,5 +1,8 @@
+//! Shared configuration helpers for iced build scripts.
+
 use cfg_aliases::cfg_aliases;
 
+/// Registers the platform and backend `cfg` aliases used by iced crates.
 pub fn cfg_aliases_setup() {
     // The script doesn't depend on our code
     println!("cargo:rerun-if-changed=build.rs");

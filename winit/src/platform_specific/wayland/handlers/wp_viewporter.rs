@@ -3,9 +3,7 @@
 use cctk::sctk::reexports::client::Dispatch;
 use cctk::sctk::reexports::client::globals::{BindError, GlobalList};
 use cctk::sctk::reexports::client::protocol::wl_surface::WlSurface;
-use cctk::sctk::reexports::client::{
-    Connection, Proxy, QueueHandle, delegate_dispatch,
-};
+use cctk::sctk::reexports::client::{Connection, Proxy, QueueHandle, delegate_dispatch};
 use cctk::sctk::reexports::protocols::wp::viewporter::client::wp_viewport::WpViewport;
 use cctk::sctk::reexports::protocols::wp::viewporter::client::wp_viewporter::WpViewporter;
 

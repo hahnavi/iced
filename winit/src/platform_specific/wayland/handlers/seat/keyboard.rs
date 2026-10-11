@@ -12,10 +12,7 @@ use cctk::sctk::{
     shell::{WaylandSurface, wlr_layer::KeyboardInteractivity},
 };
 
-fn modifiers_from_keysyms(
-    keysyms: &[Keysym],
-    previous: Modifiers,
-) -> Modifiers {
+fn modifiers_from_keysyms(keysyms: &[Keysym], previous: Modifiers) -> Modifiers {
     let mut modifiers = Modifiers {
         caps_lock: previous.caps_lock,
         num_lock: previous.num_lock,
@@ -24,12 +21,8 @@ fn modifiers_from_keysyms(
 
     for keysym in keysyms {
         match keysym.raw() {
-            xkeysym::key::Shift_L | xkeysym::key::Shift_R => {
-                modifiers.shift = true
-            }
-            xkeysym::key::Control_L | xkeysym::key::Control_R => {
-                modifiers.ctrl = true
-            }
+            xkeysym::key::Shift_L | xkeysym::key::Shift_R => modifiers.shift = true,
+            xkeysym::key::Control_L | xkeysym::key::Control_R => modifiers.ctrl = true,
             xkeysym::key::Alt_L | xkeysym::key::Alt_R => modifiers.alt = true,
             xkeysym::key::Super_L
             | xkeysym::key::Super_R
@@ -37,9 +30,7 @@ fn modifiers_from_keysyms(
             | xkeysym::key::Hyper_R
             | xkeysym::key::Meta_L
             | xkeysym::key::Meta_R => modifiers.logo = true,
-            xkeysym::key::Caps_Lock | xkeysym::key::Shift_Lock => {
-                modifiers.caps_lock = true
-            }
+            xkeysym::key::Caps_Lock | xkeysym::key::Shift_Lock => modifiers.caps_lock = true,
             xkeysym::key::Num_Lock => modifiers.num_lock = true,
             _ => {}
         }
@@ -72,10 +63,11 @@ impl KeyboardHandler for SctkState {
                     None => return,
                 };
 
-            let surface = if let Some(subsurface) =
-                self.subsurfaces.iter().find(|s| {
-                    s.steals_keyboard_focus && s.instance.parent == *surface
-                }) {
+            let surface = if let Some(subsurface) = self
+                .subsurfaces
+                .iter()
+                .find(|s| s.steals_keyboard_focus && s.instance.parent == *surface)
+            {
                 &subsurface.instance.wl_surface
             } else {
                 surface
@@ -99,14 +91,13 @@ impl KeyboardHandler for SctkState {
             return;
         }
 
-        let surfaces = self.subsurfaces.iter().filter_map(|s| {
-            (s.instance.parent == *surface).then(|| &s.instance.wl_surface)
-        });
+        let surfaces = self
+            .subsurfaces
+            .iter()
+            .filter_map(|s| (s.instance.parent == *surface).then(|| &s.instance.wl_surface));
         for surface in surfaces.chain(std::iter::once(surface)) {
             if is_active {
-                let id = winit::window::WindowId::from_raw(
-                    surface.id().as_ptr() as usize,
-                );
+                let id = winit::window::WindowId::from_raw(surface.id().as_ptr() as usize);
                 if self.windows.iter().any(|w| w.window.id() == id) {
                     continue;
                 }
@@ -140,17 +131,16 @@ impl KeyboardHandler for SctkState {
     ) {
         self.request_redraw(surface);
         let (is_active, seat, kbd) = {
-            let (is_active, my_seat) =
-                match self.seats.iter_mut().enumerate().find_map(|(i, s)| {
-                    if s.kbd.as_ref() == Some(keyboard) {
-                        Some((i, s))
-                    } else {
-                        None
-                    }
-                }) {
-                    Some((i, s)) => (i == 0, s),
-                    None => return,
-                };
+            let (is_active, my_seat) = match self.seats.iter_mut().enumerate().find_map(|(i, s)| {
+                if s.kbd.as_ref() == Some(keyboard) {
+                    Some((i, s))
+                } else {
+                    None
+                }
+            }) {
+                Some((i, s)) => (i == 0, s),
+                None => return,
+            };
             let seat = my_seat.seat.clone();
             let kbd = keyboard.clone();
             _ = my_seat.kbd_focus.take();
@@ -171,8 +161,7 @@ impl KeyboardHandler for SctkState {
                             }))
                             && self.layer_surfaces.iter().any(|l| {
                                 l.surface.wl_surface() == s
-                                    && l.keyboard_interactivity
-                                        == KeyboardInteractivity::Exclusive
+                                    && l.keyboard_interactivity == KeyboardInteractivity::Exclusive
                             })
                     }
                     _ => false,
@@ -182,9 +171,10 @@ impl KeyboardHandler for SctkState {
             _ = self.kbd_leave_to_own_popup.insert(surface.id());
             return;
         }
-        let surfaces = self.subsurfaces.iter().filter_map(|s| {
-            (s.instance.parent == *surface).then(|| &s.instance.wl_surface)
-        });
+        let surfaces = self
+            .subsurfaces
+            .iter()
+            .filter_map(|s| (s.instance.parent == *surface).then(|| &s.instance.wl_surface));
         for surface in surfaces.chain(std::iter::once(surface)) {
             if is_active {
                 self.sctk_events.push(SctkEvent::KeyboardEvent {
@@ -194,14 +184,10 @@ impl KeyboardHandler for SctkState {
                     surface: surface.clone(),
                 });
                 // if there is another seat with a keyboard focused on a surface make that the new active seat
-                if let Some(i) =
-                    self.seats.iter().position(|s| s.kbd_focus.is_some())
-                {
+                if let Some(i) = self.seats.iter().position(|s| s.kbd_focus.is_some()) {
                     self.seats.swap(0, i);
                     let s = &self.seats[0];
-                    let id = winit::window::WindowId::from_raw(
-                        surface.id().as_ptr() as usize,
-                    );
+                    let id = winit::window::WindowId::from_raw(surface.id().as_ptr() as usize);
                     if self.windows.iter().any(|w| w.window.id() == id) {
                         continue;
                     }
@@ -211,9 +197,7 @@ impl KeyboardHandler for SctkState {
                         winit::event::WindowEvent::Focused(true),
                     ));
                     self.sctk_events.push(SctkEvent::KeyboardEvent {
-                        variant: KeyboardEventVariant::Enter(
-                            s.kbd_focus.clone().unwrap(),
-                        ),
+                        variant: KeyboardEventVariant::Enter(s.kbd_focus.clone().unwrap()),
                         kbd_id: s.kbd.clone().unwrap(),
                         seat_id: s.seat.clone(),
                         surface: surface.clone(),
@@ -237,27 +221,26 @@ impl KeyboardHandler for SctkState {
         serial: u32,
         event: cctk::sctk::seat::keyboard::KeyEvent,
     ) {
-        let (is_active, my_seat) =
-            match self.seats.iter_mut().enumerate().find_map(|(i, s)| {
-                if s.kbd.as_ref() == Some(keyboard) {
-                    Some((i, s))
-                } else {
-                    None
-                }
-            }) {
-                Some((i, s)) => (i == 0, s),
-                None => return,
-            };
+        let (is_active, my_seat) = match self.seats.iter_mut().enumerate().find_map(|(i, s)| {
+            if s.kbd.as_ref() == Some(keyboard) {
+                Some((i, s))
+            } else {
+                None
+            }
+        }) {
+            Some((i, s)) => (i == 0, s),
+            None => return,
+        };
         let seat_id = my_seat.seat.clone();
         let kbd_id = keyboard.clone();
         _ = my_seat.last_kbd_press.replace((event.clone(), serial));
         if is_active {
             if let Some(surface) = my_seat.kbd_focus.clone() {
                 self.request_redraw(&surface);
-                let surfaces = self.subsurfaces.iter().filter_map(|s| {
-                    (s.instance.parent == surface)
-                        .then(|| &s.instance.wl_surface)
-                });
+                let surfaces = self
+                    .subsurfaces
+                    .iter()
+                    .filter_map(|s| (s.instance.parent == surface).then(|| &s.instance.wl_surface));
                 for surface in surfaces.chain(std::iter::once(&surface)) {
                     self.sctk_events.push(SctkEvent::KeyboardEvent {
                         variant: KeyboardEventVariant::Press(event.clone()),
@@ -278,27 +261,26 @@ impl KeyboardHandler for SctkState {
         _serial: u32,
         event: cctk::sctk::seat::keyboard::KeyEvent,
     ) {
-        let (is_active, my_seat) =
-            match self.seats.iter_mut().enumerate().find_map(|(i, s)| {
-                if s.kbd.as_ref() == Some(keyboard) {
-                    Some((i, s))
-                } else {
-                    None
-                }
-            }) {
-                Some((i, s)) => (i == 0, s),
-                None => return,
-            };
+        let (is_active, my_seat) = match self.seats.iter_mut().enumerate().find_map(|(i, s)| {
+            if s.kbd.as_ref() == Some(keyboard) {
+                Some((i, s))
+            } else {
+                None
+            }
+        }) {
+            Some((i, s)) => (i == 0, s),
+            None => return,
+        };
         let seat_id = my_seat.seat.clone();
         let kbd_id = keyboard.clone();
 
         if is_active {
             if let Some(surface) = my_seat.kbd_focus.clone() {
                 self.request_redraw(&surface);
-                let surfaces = self.subsurfaces.iter().filter_map(|s| {
-                    (s.instance.parent == surface)
-                        .then(|| &s.instance.wl_surface)
-                });
+                let surfaces = self
+                    .subsurfaces
+                    .iter()
+                    .filter_map(|s| (s.instance.parent == surface).then(|| &s.instance.wl_surface));
                 for surface in surfaces.chain(std::iter::once(&surface)) {
                     self.sctk_events.push(SctkEvent::KeyboardEvent {
                         variant: KeyboardEventVariant::Release(event.clone()),
@@ -321,17 +303,16 @@ impl KeyboardHandler for SctkState {
         _raw_modifiers: RawModifiers,
         _layout: u32,
     ) {
-        let (is_active, my_seat) =
-            match self.seats.iter_mut().enumerate().find_map(|(i, s)| {
-                if s.kbd.as_ref() == Some(keyboard) {
-                    Some((i, s))
-                } else {
-                    None
-                }
-            }) {
-                Some((i, s)) => (i == 0, s),
-                None => return,
-            };
+        let (is_active, my_seat) = match self.seats.iter_mut().enumerate().find_map(|(i, s)| {
+            if s.kbd.as_ref() == Some(keyboard) {
+                Some((i, s))
+            } else {
+                None
+            }
+        }) {
+            Some((i, s)) => (i == 0, s),
+            None => return,
+        };
         let seat_id = my_seat.seat.clone();
         let kbd_id = keyboard.clone();
         my_seat._modifiers = modifiers;
@@ -339,15 +320,13 @@ impl KeyboardHandler for SctkState {
         if is_active {
             if let Some(surface) = my_seat.kbd_focus.clone() {
                 self.request_redraw(&surface);
-                let surfaces = self.subsurfaces.iter().filter_map(|s| {
-                    (s.instance.parent == surface)
-                        .then(|| &s.instance.wl_surface)
-                });
+                let surfaces = self
+                    .subsurfaces
+                    .iter()
+                    .filter_map(|s| (s.instance.parent == surface).then(|| &s.instance.wl_surface));
                 for surface in surfaces.chain(std::iter::once(&surface)) {
                     self.sctk_events.push(SctkEvent::KeyboardEvent {
-                        variant: KeyboardEventVariant::Modifiers(
-                            modifiers.clone(),
-                        ),
+                        variant: KeyboardEventVariant::Modifiers(modifiers.clone()),
                         kbd_id: kbd_id.clone(),
                         seat_id: seat_id.clone(),
                         surface: surface.clone(),
@@ -356,8 +335,7 @@ impl KeyboardHandler for SctkState {
                 // A popup holds the seat's keyboard on behalf of its toplevel. Report
                 // the modifiers to the toplevel as well.
                 let toplevel = self.popmgr.popups().find_map(|p| {
-                    (p.popup.wl_surface() == &surface)
-                        .then(|| p.data.toplevel.clone())
+                    (p.popup.wl_surface() == &surface).then(|| p.data.toplevel.clone())
                 });
                 if let Some(toplevel) = toplevel {
                     let id = self
