@@ -155,6 +155,11 @@ where
         self
     }
 
+    /// Sets the [`Ellipsize`] strategy of the [`Text`].
+    pub fn ellipsize(self, ellipsize: impl Into<Ellipsis>) -> Self {
+        self.ellipsis(ellipsize.into())
+    }
+
     /// Sets whether the [`Text`] can be selected.
     ///
     /// By default, it is `false`.

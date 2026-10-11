@@ -51,13 +51,8 @@ impl<W> Row<W> {
     }
 
     /// Creates a [`Row`] with the given widgets.
-    pub fn with_children(children: impl IntoIterator<Item = W>) -> Self
-    where
-        W: Meta,
-    {
-        let iterator = children.into_iter();
-
-        Self::with_capacity(iterator.size_hint().0).extend(iterator)
+    pub fn with_children(children: impl IntoIterator<Item = W>) -> Self {
+        Self::from_vec(children.into_iter().collect())
     }
 
     /// Creates a [`Row`] from an already allocated [`Vec`].
@@ -121,10 +116,11 @@ impl<W> Row<W> {
     }
 
     /// Adds a [`Widget`] to the [`Row`].
-    pub fn push(mut self, child: W) -> Self
+    pub fn push(mut self, child: impl Into<W>) -> Self
     where
         W: Meta,
     {
+        let child = child.into();
         if !child.is_void() {
             self.children.push(child);
         }
@@ -133,12 +129,12 @@ impl<W> Row<W> {
     }
 
     /// Adds an element to the [`Row`], if [`Some`].
-    pub fn push_maybe(self, child: Option<W>) -> Self
+    pub fn push_maybe<T: Into<W>>(self, child: Option<T>) -> Self
     where
         W: Meta,
     {
         if let Some(child) = child {
-            self.push(child)
+            self.push(child.into())
         } else {
             self
         }
@@ -170,10 +166,7 @@ impl<W> Default for Row<W> {
     }
 }
 
-impl<W> FromIterator<W> for Row<W>
-where
-    W: Meta,
-{
+impl<W> FromIterator<W> for Row<W> {
     fn from_iter<T: IntoIterator<Item = W>>(iter: T) -> Self {
         Self::with_children(iter)
     }

@@ -2034,7 +2034,7 @@ where
         column(
             contents
                 .iter()
-                .map(|content| item(viewer, settings, content)),
+                .map(|content| crate::core::Element::new(item(viewer, settings, content))),
         )
         .spacing(settings.spacing.0),
     )
@@ -2115,7 +2115,7 @@ where
         let contents = column(
             contents
                 .iter()
-                .map(|content| item(viewer, settings, content)),
+                .map(|content| crate::core::Element::new(item(viewer, settings, content))),
         )
         .spacing(settings.spacing);
 

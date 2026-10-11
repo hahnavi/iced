@@ -255,6 +255,28 @@ pub enum EllipsizeHeightLimit {
     Height(f32),
 }
 
+impl From<Ellipsize> for Ellipsis {
+    fn from(ellipsize: Ellipsize) -> Self {
+        match ellipsize {
+            Ellipsize::None => Ellipsis::None,
+            Ellipsize::Start(_) => Ellipsis::Start,
+            Ellipsize::Middle(_) => Ellipsis::Middle,
+            Ellipsize::End(_) => Ellipsis::End,
+        }
+    }
+}
+
+impl From<Ellipsis> for Ellipsize {
+    fn from(ellipsis: Ellipsis) -> Self {
+        match ellipsis {
+            Ellipsis::None => Ellipsize::None,
+            Ellipsis::Start => Ellipsize::Start(EllipsizeHeightLimit::Lines(1)),
+            Ellipsis::Middle => Ellipsize::Middle(EllipsizeHeightLimit::Lines(1)),
+            Ellipsis::End => Ellipsize::End(EllipsizeHeightLimit::Lines(1)),
+        }
+    }
+}
+
 /// The cursor affinity when text wraps or at bidi boundaries.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Affinity {

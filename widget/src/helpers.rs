@@ -446,10 +446,7 @@ pub fn pin<W>(content: W) -> Pin<W> {
 ///     column((0..5).map(|i| text!("Item {i}")))
 /// }
 /// ```
-pub fn column<W>(children: impl IntoIterator<Item = W>) -> Column<W>
-where
-    W: Meta,
-{
+pub fn column<W>(children: impl IntoIterator<Item = W>) -> Column<W> {
     Column::with_children(children)
 }
 
@@ -477,7 +474,6 @@ where
 pub fn keyed_column<Key, W>(children: impl IntoIterator<Item = (Key, W)>) -> keyed::Column<Key, W>
 where
     Key: Copy + PartialEq,
-    W: Meta,
 {
     keyed::Column::with_children(children)
 }
@@ -500,10 +496,7 @@ where
 ///     row((0..5).map(|i| text!("Item {i}")))
 /// }
 /// ```
-pub fn row<W>(children: impl IntoIterator<Item = W>) -> Row<W>
-where
-    W: Meta,
-{
+pub fn row<W>(children: impl IntoIterator<Item = W>) -> Row<W> {
     Row::with_children(children)
 }
 

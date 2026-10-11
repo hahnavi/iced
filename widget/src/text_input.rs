@@ -545,6 +545,8 @@ pub struct Style {
     pub value: Color,
     /// The [`Color`] of the selection of the text input.
     pub selection: Color,
+    /// The [`Color`] of the icon of the text input.
+    pub icon: Color,
 }
 
 /// The theme catalog of a [`TextInput`].
@@ -590,6 +592,7 @@ pub fn default(theme: &Theme, status: Status) -> Style {
         placeholder: palette.secondary.base.color,
         value: palette.background.base.text,
         selection: palette.primary.weak.color,
+        icon: palette.background.base.text,
     };
 
     match status {

@@ -4,7 +4,7 @@ use download::download;
 
 use iced::task;
 use iced::widget::{button, center, column, progress_bar, text};
-use iced::{Center, Function, Right, Task, Widget};
+use iced::{Center, Element, Function, Right, Task, Widget};
 
 pub fn main() -> iced::Result {
     iced::application(Example::default, Example::update, Example::view).run()
@@ -150,7 +150,7 @@ impl Download {
         }
     }
 
-    pub fn view(&self) -> impl Widget<Message> {
+    pub fn view(&self) -> Element<'_, Message> {
         let current_progress = match &self.state {
             State::Idle => 0.0,
             State::Downloading { progress, .. } => *progress,
@@ -182,5 +182,6 @@ impl Download {
             .spacing(10)
             .padding(10)
             .align_x(Center)
+            .boxed()
     }
 }

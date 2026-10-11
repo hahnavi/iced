@@ -90,21 +90,21 @@ impl<W> Grid<W> {
     }
 
     /// Adds a [`Widget`] to the [`Grid`].
-    pub fn push(mut self, child: W) -> Self
+    pub fn push(mut self, child: impl Into<W>) -> Self
     where
         W: Meta,
     {
-        self.children.push(child);
+        self.children.push(child.into());
         self
     }
 
     /// Adds a widget to the [`Grid`], if `Some`.
-    pub fn push_maybe(self, child: Option<W>) -> Self
+    pub fn push_maybe<T: Into<W>>(self, child: Option<T>) -> Self
     where
         W: Meta,
     {
         if let Some(child) = child {
-            self.push(child)
+            self.push(child.into())
         } else {
             self
         }

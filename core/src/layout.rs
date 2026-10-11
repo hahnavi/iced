@@ -102,13 +102,19 @@ impl Layout {
             .map(move |child| (self.child(child), child))
     }
 
-    fn child(&self, child: &widget::Tree) -> Self {
+    /// Returns a child [`Layout`] for the given [`widget::Tree`].
+    pub fn child(&self, child: &widget::Tree) -> Self {
         Self {
             position: self.position + child.translation,
             size: child.size,
             parent: Some(self.bounds()),
             virtual_offset: self.virtual_offset,
         }
+    }
+
+    /// Returns a compatibility iterator over the children of this [`Layout`].
+    pub fn children(&self) -> impl DoubleEndedIterator<Item = Layout> + ExactSizeIterator {
+        [*self, *self].into_iter()
     }
 }
 

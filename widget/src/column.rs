@@ -51,13 +51,8 @@ impl<W> Column<W> {
     }
 
     /// Creates a [`Column`] with the given widgets.
-    pub fn with_children(children: impl IntoIterator<Item = W>) -> Self
-    where
-        W: Meta,
-    {
-        let iterator = children.into_iter();
-
-        Self::with_capacity(iterator.size_hint().0).extend(iterator)
+    pub fn with_children(children: impl IntoIterator<Item = W>) -> Self {
+        Self::from_vec(children.into_iter().collect())
     }
 
     /// Creates a [`Column`] from an already allocated [`Vec`].
@@ -115,10 +110,11 @@ impl<W> Column<W> {
     }
 
     /// Adds a [`Widget`] to the [`Column`].
-    pub fn push(mut self, child: W) -> Self
+    pub fn push(mut self, child: impl Into<W>) -> Self
     where
         W: Meta,
     {
+        let child = child.into();
         if !child.is_void() {
             self.children.push(child);
         }
@@ -127,12 +123,12 @@ impl<W> Column<W> {
     }
 
     /// Adds an element to the [`Column`], if [`Some`].
-    pub fn push_maybe(self, child: Option<W>) -> Self
+    pub fn push_maybe<T: Into<W>>(self, child: Option<T>) -> Self
     where
         W: Meta,
     {
         if let Some(child) = child {
-            self.push(child)
+            self.push(child.into())
         } else {
             self
         }
@@ -164,10 +160,7 @@ impl<W> Default for Column<W> {
     }
 }
 
-impl<W> FromIterator<W> for Column<W>
-where
-    W: Meta,
-{
+impl<W> FromIterator<W> for Column<W> {
     fn from_iter<T: IntoIterator<Item = W>>(iter: T) -> Self {
         Self::with_children(iter)
     }

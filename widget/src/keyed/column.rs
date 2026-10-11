@@ -78,13 +78,9 @@ where
     }
 
     /// Creates a [`Column`] with the given elements.
-    pub fn with_children(children: impl IntoIterator<Item = (Key, W)>) -> Self
-    where
-        W: Meta,
-    {
-        let iterator = children.into_iter();
-
-        Self::with_capacity(iterator.size_hint().0).extend(iterator)
+    pub fn with_children(children: impl IntoIterator<Item = (Key, W)>) -> Self {
+        let (keys, children) = children.into_iter().unzip();
+        Self::from_vecs(keys, children)
     }
 
     /// Sets the vertical spacing _between_ elements.
