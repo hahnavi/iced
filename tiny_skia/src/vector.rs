@@ -2,9 +2,9 @@ use crate::core::svg::{Data, Handle};
 use crate::core::{Color, Rectangle, Size};
 use crate::graphics::text;
 
-use fontdb::{Family as FontFamily, Source as FontSource};
 use resvg::usvg;
 use rustc_hash::{FxHashMap, FxHashSet};
+use text::cosmic_text::fontdb::{Family as FontFamily, Source as FontSource};
 use tiny_skia::Transform;
 
 use std::cell::RefCell;
@@ -94,39 +94,51 @@ impl Cache {
 
         // TODO: Reuse `cosmic-text` font database
         #[cfg(feature = "svg-text")]
-        if self.fontdb.is_none() {
-            let mut fontdb = usvg::fontdb::Database::new();
-            let mut loaded_files = HashSet::new();
-            let mut loaded_data = HashSet::new();
+        {
+            let font_system = text::font_system().read().expect("Read font system");
+            let version = font_system.version();
 
-            fontdb.set_serif_family(source_db.family_name(&FontFamily::Serif));
-            fontdb.set_sans_serif_family(source_db.family_name(&FontFamily::SansSerif));
-            fontdb.set_cursive_family(source_db.family_name(&FontFamily::Cursive));
-            fontdb.set_fantasy_family(source_db.family_name(&FontFamily::Fantasy));
-            fontdb.set_monospace_family(source_db.family_name(&FontFamily::Monospace));
+            if self.fontdb_version != Some(version) {
+                let source_db = font_system.db();
+                let mut fontdb = usvg::fontdb::Database::new();
+                let mut loaded_files = HashSet::new();
+                let mut loaded_data = HashSet::new();
 
-            for face in source_db.faces() {
-                let Some((source, _)) = source_db.face_source(face.id) else {
-                    continue;
-                };
+                fontdb.set_serif_family(source_db.family_name(&FontFamily::Serif));
+                fontdb.set_sans_serif_family(source_db.family_name(&FontFamily::SansSerif));
+                fontdb.set_cursive_family(source_db.family_name(&FontFamily::Cursive));
+                fontdb.set_fantasy_family(source_db.family_name(&FontFamily::Fantasy));
+                fontdb.set_monospace_family(source_db.family_name(&FontFamily::Monospace));
 
-                match source {
-                    FontSource::File(path) => {
-                        if loaded_files.insert(path.clone()) {
-                            let _ = fontdb.load_font_file(path);
+                for face in source_db.faces() {
+                    let Some((source, _)) = source_db.face_source(face.id) else {
+                        continue;
+                    };
+
+                    match source {
+                        FontSource::File(path) => {
+                            if loaded_files.insert(path.clone()) {
+                                let _ = fontdb.load_font_file(path);
+                            }
                         }
-                    }
-                    FontSource::Binary(data) | FontSource::SharedFile(_, data) => {
-                        let source = Arc::as_ptr(&data) as *const () as usize;
-                        if loaded_data.insert(source) {
-                            let _ = fontdb.load_font_source(usvg::fontdb::Source::Binary(data));
+                        FontSource::Binary(data) | FontSource::SharedFile(_, data) => {
+                            let source = Arc::as_ptr(&data) as *const () as usize;
+                            if loaded_data.insert(source) {
+                                let _ = fontdb.load_font_source(usvg::fontdb::Source::Binary(data));
+                            }
                         }
                     }
                 }
-            }
 
-            self.fontdb = Some(Arc::new(fontdb));
-            self.fontdb_version = Some(version);
+                // SVG trees and rasterized images contain font-dependent
+                // layout, so they must be rebuilt along with the font DB.
+                self.trees.clear();
+                self.tree_hits.clear();
+                self.rasters.clear();
+                self.raster_hits.clear();
+                self.fontdb = Some(Arc::new(fontdb));
+                self.fontdb_version = Some(version);
+            }
         }
 
         let options = usvg::Options {
@@ -177,10 +189,12 @@ impl Cache {
             size,
         };
 
+        // Check for font database changes even when the raster is cached.
+        let _ = self.load(handle)?;
+
         #[allow(clippy::map_entry)]
         if !self.rasters.contains_key(&key) {
-            let tree = self.load(handle)?;
-
+            let tree = self.trees.get(&handle.id())?.as_ref()?;
             let mut image = tiny_skia::Pixmap::new(size.width, size.height)?;
 
             let tree_size = tree.size().to_int_size();

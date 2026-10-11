@@ -7,13 +7,11 @@ edition = "2021"
 # TODO Ashley re-export more platform adapters
 [features]
 async-io = ["accesskit_winit?/async-io"]
-tokio = ["accesskit_winit?/tokio"]
 
 [dependencies]
 accesskit = { git = "https://github.com/wash2/accesskit", rev = "6c20249" }
-accesskit_windows = { git = "https://github.com/wash2/accesskit", rev = "6c20249", optional = true }
-accesskit_macos = { git = "https://github.com/wash2/accesskit", rev = "6c20249", optional = true }
 accesskit_winit = { git = "https://github.com/wash2/accesskit", rev = "6c20249", optional = true, default-features = false, features = [
+    "async-io",
     "rwh_06",
 ] }
 # accesskit = { path = "../../../accesskit/common" }
@@ -22,3 +20,9 @@ accesskit_winit = { git = "https://github.com/wash2/accesskit", rev = "6c20249",
 # accesskit_winit = { path = "../../../accesskit/platforms/winit", optional = true, default-features = false, features = [
 #     "rwh_06",
 # ] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+accesskit_windows = { git = "https://github.com/wash2/accesskit", rev = "6c20249", optional = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+accesskit_macos = { git = "https://github.com/wash2/accesskit", rev = "6c20249", optional = true }

@@ -90,6 +90,7 @@ use crate::runtime::system;
 use crate::runtime::user_interface::{self, UserInterface};
 use crate::runtime::{Action, Task};
 
+#[cfg(not(feature = "program"))]
 use program::Program;
 #[cfg(feature = "program")]
 pub use program::Program;

@@ -54,8 +54,8 @@ tester = ["dep:iced_tester"]
 # Enables the `thread-pool` futures executor as the `executor::Default` on native platforms
 thread-pool = ["iced_futures/thread-pool"]
 # Enables `tokio` as the `executor::Default` on native platforms
-tokio = ["iced_futures/tokio", "iced_accessibility?/tokio"]
-# Enables `async-io` for accessibility support; use with `default-features = false` to avoid `tokio`
+tokio = ["iced_futures/tokio"]
+# Compatibility feature; the AccessKit Unix adapter uses async-io independently of Iced's executor.
 async-std = ["iced_accessibility?/async-io"]
 # Enables `smol` as the `executor::Default` on native platforms
 smol = ["iced_futures/smol"]
