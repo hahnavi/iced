@@ -305,6 +305,38 @@ impl From<Color> for Oklch {
     }
 }
 
+impl<S> From<palette::rgb::Rgb<S, f32>> for Color {
+    fn from(rgb: palette::rgb::Rgb<S, f32>) -> Self {
+        Color::from_rgb(rgb.red, rgb.green, rgb.blue)
+    }
+}
+
+impl<S> From<palette::Alpha<palette::rgb::Rgb<S, f32>, f32>> for Color {
+    fn from(alpha: palette::Alpha<palette::rgb::Rgb<S, f32>, f32>) -> Self {
+        Color::from_rgba(
+            alpha.color.red,
+            alpha.color.green,
+            alpha.color.blue,
+            alpha.alpha,
+        )
+    }
+}
+
+impl<S> From<Color> for palette::rgb::Rgb<S, f32> {
+    fn from(color: Color) -> Self {
+        palette::rgb::Rgb::new(color.r, color.g, color.b)
+    }
+}
+
+impl<S> From<Color> for palette::Alpha<palette::rgb::Rgb<S, f32>, f32> {
+    fn from(color: Color) -> Self {
+        palette::Alpha {
+            color: palette::rgb::Rgb::new(color.r, color.g, color.b),
+            alpha: color.a,
+        }
+    }
+}
+
 /// An error which can be returned when parsing color from an RGB hexadecimal string.
 ///
 /// See [`Color`] for specifications for the string.
