@@ -4,10 +4,9 @@ pub mod text;
 pub mod tree;
 
 mod element;
-mod id;
 
+pub use crate::id::Id;
 pub use element::Element;
-pub use id::Id;
 pub use operation::Operation;
 pub use text::Text;
 pub use tree::Tree;

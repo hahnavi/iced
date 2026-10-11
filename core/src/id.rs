@@ -34,6 +34,20 @@ impl Id {
 
         Self(Internal::Unique(id))
     }
+
+    /// Groups several widget identifiers under one identifier.
+    pub fn grouped(ids: impl IntoIterator<Item = Id>) -> Self {
+        Self(Internal::Set(ids.into_iter().map(|id| id.0).collect()))
+    }
+
+    /// Returns a stable numeric identifier suitable for native drag-and-drop APIs.
+    pub fn to_u128(&self) -> u128 {
+        use std::hash::{Hash, Hasher};
+
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        self.hash(&mut hasher);
+        u128::from(hasher.finish())
+    }
 }
 
 impl From<&'static str> for Id {

@@ -72,6 +72,7 @@ static CUSTOM_IDS: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();
 const WINDOW_NODE_ID_PREFIX: u64 = 1 << 63;
 
 /// The identifier of a generic widget.
+#[repr(transparent)]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Id(pub Internal);
 
@@ -109,6 +110,30 @@ impl Id {
         let id = Self::next();
 
         Self(Internal::Unique(id))
+    }
+
+    /// Groups several widget identifiers under one identifier.
+    pub fn grouped(ids: impl IntoIterator<Item = Id>) -> Self {
+        Self(Internal::Set(ids.into_iter().map(|id| id.0).collect()))
+    }
+
+    /// Returns the identifiers in this group, if this is a grouped identifier.
+    pub fn grouped_ids(&self) -> Option<&[Id]> {
+        match &self.0 {
+            Internal::Set(ids) => {
+                Some(unsafe { std::slice::from_raw_parts(ids.as_ptr() as *const Id, ids.len()) })
+            }
+            Internal::Unique(_) | Internal::Custom(_, _) => None,
+        }
+    }
+
+    /// Returns a stable numeric identifier suitable for native drag-and-drop APIs.
+    pub fn to_u128(&self) -> u128 {
+        use std::hash::{Hash, Hasher};
+
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        self.hash(&mut hasher);
+        u128::from(hasher.finish())
     }
 }
 

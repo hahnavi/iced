@@ -35,6 +35,7 @@ pub mod time;
 pub mod touch;
 pub mod widget;
 pub mod window;
+#[cfg(not(feature = "a11y"))]
 pub mod id;
 
 mod angle;
@@ -66,7 +67,7 @@ pub use font::Font;
 pub use gradient::Gradient;
 
 #[cfg(feature = "a11y")]
-pub use iced_accessibility::id as a11y_id;
+pub use iced_accessibility::id;
 pub use image::Image;
 pub use input_method::InputMethod;
 pub use layout::{Layout, Limits, Node};
