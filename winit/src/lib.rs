@@ -2737,7 +2737,7 @@ fn system_information(graphics: compositor::Information) -> system::Information 
 fn run_clipboard<Message: Send + 'static>(
     proxy: &Proxy<Message>,
     clipboard: &mut Clipboard,
-    requests: core::clipboard::Clipboard,
+    requests: core::clipboard::Requests,
     window: window::Id,
 ) {
     for kind in requests.reads {

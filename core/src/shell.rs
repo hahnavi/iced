@@ -2,7 +2,7 @@
 use crate::clipboard;
 use crate::event;
 use crate::window;
-use crate::{Clipboard, InputMethod, Window};
+use crate::{InputMethod, Window};
 
 use std::rc::{self, Rc};
 use std::sync::Arc;
@@ -23,7 +23,7 @@ pub struct Shell<'a, Message> {
     redraw_request: window::RedrawRequest,
     input_method: InputMethod,
     invalidation: Invalidation,
-    clipboard: Clipboard,
+    clipboard: clipboard::Requests,
 }
 
 /// The most severe invalidation requested by a [`Shell`] while
@@ -56,7 +56,7 @@ impl<'a, Message> Shell<'a, Message> {
             redraw_request: window::RedrawRequest::Wait,
             invalidation: Invalidation::None,
             input_method: InputMethod::Disabled,
-            clipboard: Clipboard::new(),
+            clipboard: clipboard::Requests::new(),
         }
     }
 
@@ -163,7 +163,7 @@ impl<'a, Message> Shell<'a, Message> {
     }
 
     /// Returns the [`Clipboard`] requests of the [`Shell`], mutably.
-    pub fn clipboard_mut(&mut self) -> &mut Clipboard {
+    pub fn clipboard_mut(&mut self) -> &mut clipboard::Requests {
         &mut self.clipboard
     }
 

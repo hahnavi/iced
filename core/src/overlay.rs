@@ -17,6 +17,12 @@ where
     Renderer: crate::Renderer,
 {
     /// Draws the [`Overlay`] using the associated `Renderer`.
+    /// Returns the layout [`Node`](crate::layout::Node) of the [`Overlay`].
+    fn layout(&mut self, _renderer: &Renderer, _bounds: Size) -> crate::layout::Node {
+        crate::layout::Node::default()
+    }
+
+    /// Draws the [`Overlay`] using the associated `Renderer`.
     ///
     /// Implementors are expected to call
     /// [`Renderer::with_layer`](renderer::Renderer::with_layer) themselves,

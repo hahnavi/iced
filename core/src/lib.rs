@@ -35,6 +35,7 @@ pub mod time;
 pub mod touch;
 pub mod widget;
 pub mod window;
+pub mod id;
 
 mod angle;
 mod background;
@@ -56,7 +57,7 @@ pub use animation::Animation;
 pub use backend::Backend;
 pub use background::Background;
 pub use border::Border;
-pub use clipboard::Clipboard;
+pub use clipboard::{Clipboard, Requests};
 pub use code::Code;
 pub use color::Color;
 pub use content_fit::ContentFit;
@@ -65,10 +66,10 @@ pub use font::Font;
 pub use gradient::Gradient;
 
 #[cfg(feature = "a11y")]
-pub use iced_accessibility::id;
+pub use iced_accessibility::id as a11y_id;
 pub use image::Image;
 pub use input_method::InputMethod;
-pub use layout::Layout;
+pub use layout::{Layout, Limits, Node};
 pub use length::Length;
 pub use overlay::Overlay;
 pub use padding::Padding;

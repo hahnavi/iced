@@ -552,7 +552,7 @@ pub use crate::core::theme;
 pub use crate::core::{
     Alignment, Animation, Background, Border, Code, Color, ContentFit, Degrees, Function, Gradient,
     Length, Never, Padding, Pixels, Point, Radians, Rectangle, Rotation, Settings, Shadow, Size,
-    Theme, Transformation, Vector, never,
+    Theme, Transformation, Vector, layout::Node, never,
 };
 pub use crate::program::{Preset, message};
 pub use crate::runtime::exit;
@@ -704,6 +704,7 @@ pub use renderer::graphics::geometry;
 pub use task::Task;
 pub use widget::{Element, Widget};
 pub use window::Window;
+pub use crate::core::layout::Limits;
 
 #[doc(inline)]
 pub use application::application;

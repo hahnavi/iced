@@ -1,9 +1,11 @@
 //! Position your widgets properly.
 mod limits;
+mod node;
 
 pub mod flex;
 
 pub use limits::Limits;
+pub use node::Node;
 
 use crate::widget;
 use crate::{Length, Padding, Point, Rectangle, Size, Vector};
@@ -19,10 +21,22 @@ pub struct Layout {
 
 impl Layout {
     /// Creates a new [`Layout`] for the given [`Size`] at the origin.
-    pub fn new(size: Size) -> Self {
+    pub fn new(size: impl Into<Size>) -> Self {
         Self {
             position: Point::ORIGIN,
-            size,
+            size: size.into(),
+            parent: None,
+            virtual_offset: Vector::ZERO,
+        }
+    }
+
+    /// Creates a new [`Layout`] for the given [`Node`] with the provided offset from the origin.
+    pub fn with_offset(offset: Vector, node: &Node) -> Self {
+        let bounds = node.bounds();
+
+        Self {
+            position: Point::new(bounds.x, bounds.y) + offset,
+            size: bounds.size(),
             parent: None,
             virtual_offset: Vector::ZERO,
         }
@@ -46,8 +60,9 @@ impl Layout {
 
     /// Moves the [`Layout`] to the given position.
     pub fn move_to(self, position: impl Into<Point>) -> Self {
+        let position = position.into();
         Self {
-            position: position.into(),
+            position,
             size: self.size,
             parent: self.parent,
             virtual_offset: self.virtual_offset,
@@ -55,9 +70,6 @@ impl Layout {
     }
 
     /// Returns the bounds of the [`Layout`].
-    ///
-    /// The returned [`Rectangle`] describes the position and size of the
-    /// laid out widget.
     pub fn bounds(&self) -> Rectangle {
         Rectangle::new(self.position, self.size)
     }
@@ -100,14 +112,13 @@ impl Layout {
     }
 }
 
+impl From<&Node> for Size {
+    fn from(node: &Node) -> Size {
+        node.size()
+    }
+}
+
 /// Lays out two children side by side in the provided [`widget::Tree`].
-///
-/// The tree must have exactly two children. The first is placed at the left
-/// edge, and the second to its right after `spacing`, both vertically
-/// centered with respect to each other.
-///
-/// The resulting size is stored in the tree, along with the children's
-/// sizes and translations.
 pub fn next_to_each_other(tree: &mut widget::Tree, left: Size, right: Size, spacing: f32) {
     let (left_y, right_y) = if left.height > right.height {
         (0.0, (left.height - right.height) / 2.0)

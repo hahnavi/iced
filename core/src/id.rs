@@ -85,14 +85,11 @@ impl std::fmt::Display for Id {
     }
 }
 
-// XXX WIndow IDs are made unique by adding u64::MAX to them
+const WINDOW_NODE_ID_PREFIX: u64 = 1 << 63;
+
 /// get window node id that won't conflict with other node ids for the duration of the program
-pub fn window_node_id() -> NonZeroU128 {
-    std::num::NonZeroU128::try_from(
-        u64::MAX as u128
-            + NEXT_WINDOW_ID.fetch_add(1, atomic::Ordering::Relaxed) as u128,
-    )
-    .unwrap()
+pub fn window_node_id() -> u64 {
+    WINDOW_NODE_ID_PREFIX | NEXT_WINDOW_ID.fetch_add(1, atomic::Ordering::Relaxed)
 }
 
 // TODO refactor to make panic impossible?

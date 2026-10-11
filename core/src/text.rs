@@ -232,6 +232,39 @@ pub enum Ellipsis {
     End,
 }
 
+/// The ellipsizing strategy of some [`Text`].
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum Ellipsize {
+    /// No ellipsizing.
+    #[default]
+    None,
+    /// Ellipsize at the start of the text.
+    Start(EllipsizeHeightLimit),
+    /// Ellipsize in the middle of the text.
+    Middle(EllipsizeHeightLimit),
+    /// Ellipsize at the end of the text.
+    End(EllipsizeHeightLimit),
+}
+
+/// The ellipsizing strategy of some text when it exceeds a certain height.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum EllipsizeHeightLimit {
+    /// The number of lines after which ellipsizing should occur.
+    Lines(usize),
+    /// The height limit in pixels
+    Height(f32),
+}
+
+/// The cursor affinity when text wraps or at bidi boundaries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Affinity {
+    /// Associate with the run before the cursor index.
+    #[default]
+    Before,
+    /// Associate with the run after the cursor index.
+    After,
+}
+
 /// The height of a line of text in a paragraph.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum LineHeight {
@@ -323,6 +356,9 @@ pub enum Difference {
 
 /// A renderer capable of measuring and drawing [`Text`].
 pub trait Renderer: crate::Renderer {
+    /// The font type used.
+    type Font: Copy + PartialEq;
+
     /// The [`Paragraph`] of this [`Renderer`].
     type Paragraph: Paragraph + 'static;
 

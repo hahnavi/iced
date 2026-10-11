@@ -3,9 +3,8 @@ use std::any::Any;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use dnd::DndAction;
-use dnd::DndDestinationRectangle;
-use mime::AsMimeTypes;
+use dnd::{DndAction, DndDestinationRectangle, DndSurface};
+use mime::{AsMimeTypes, ClipboardStoreData};
 
 use crate::widget::{self, Element};
 
@@ -146,8 +145,65 @@ impl std::fmt::Debug for DndStart {
     }
 }
 
+/// A trait for interacting with the clipboard in widgets.
+pub trait Clipboard {
+    /// Reads the current content of the [`Clipboard`] as text.
+    fn read(&self, _kind: Kind) -> Option<String> {
+        None
+    }
+
+    /// Writes the given text contents to the [`Clipboard`].
+    fn write(&mut self, _kind: Kind, _contents: String) {}
+
+    /// Reads data from the clipboard.
+    fn read_data(&self, _kind: Kind, _mimes: Vec<String>) -> Option<(Vec<u8>, String)> {
+        None
+    }
+
+    /// Writes data to the clipboard.
+    fn write_data(
+        &mut self,
+        _kind: Kind,
+        _contents: ClipboardStoreData<Box<dyn Send + Sync + 'static + AsMimeTypes>>,
+    ) {
+    }
+
+    /// Registers DnD destinations.
+    fn register_dnd_destination(
+        &self,
+        _surface: DndSurface,
+        _rectangles: Vec<DndDestinationRectangle>,
+    ) {
+    }
+
+    /// Set the final action for the DnD operation.
+    fn set_action(&self, _action: DndAction) {}
+
+    /// Starts a DnD operation.
+    fn start_dnd(
+        &mut self,
+        _internal: bool,
+        _source_surface: Option<DndSource>,
+        _icon_surface: Option<DynIconSurface>,
+        _content: Box<dyn AsMimeTypes + Send + 'static>,
+        _actions: DndAction,
+    ) {
+    }
+
+    /// Ends a DnD operation.
+    fn end_dnd(&self) {}
+
+    /// Peeks DnD data.
+    fn peek_dnd(&self, _mime: String) -> Option<(Vec<u8>, String)> {
+        None
+    }
+
+    /// Request window size.
+    fn request_logical_window_size(&self, _width: f32, _height: f32) {}
+}
+
 /// A set of clipboard and drag-and-drop requests produced by widgets.
-pub struct Clipboard {
+pub struct Requests {
     /// The read requests the runtime must fulfill.
     pub reads: Vec<Kind>,
     /// The content that must be written to the clipboard by the runtime,
@@ -157,9 +213,9 @@ pub struct Clipboard {
     pub dnd: Vec<DndStart>,
 }
 
-impl std::fmt::Debug for Clipboard {
+impl std::fmt::Debug for Requests {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Clipboard")
+        f.debug_struct("Requests")
             .field("reads", &self.reads)
             .field("write", &self.write)
             .field("dnd_count", &self.dnd.len())
@@ -167,8 +223,8 @@ impl std::fmt::Debug for Clipboard {
     }
 }
 
-impl Clipboard {
-    /// Creates a new empty set of [`Clipboard`] requests.
+impl Requests {
+    /// Creates a new empty set of clipboard requests.
     pub fn new() -> Self {
         Self {
             reads: Vec::new(),
@@ -177,7 +233,7 @@ impl Clipboard {
         }
     }
 
-    /// Merges the current [`Clipboard`] requests with others.
+    /// Merges the current requests with others.
     pub fn merge(&mut self, other: &mut Self) {
         self.reads.append(&mut other.reads);
         self.write = other.write.take().or(self.write.take());
@@ -185,10 +241,28 @@ impl Clipboard {
     }
 }
 
-impl Default for Clipboard {
+impl Default for Requests {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Starts a DnD operation.
+pub fn start_dnd<T: 'static, R: 'static>(
+    clipboard: &mut dyn Clipboard,
+    internal: bool,
+    source_surface: Option<DndSource>,
+    icon_surface: Option<IconSurface<Element<'static, (), T, R>>>,
+    content: Box<dyn AsMimeTypes + Send + 'static>,
+    actions: DndAction,
+) {
+    clipboard.start_dnd(
+        internal,
+        source_surface,
+        icon_surface.map(IconSurface::upcast),
+        content,
+        actions,
+    );
 }
 
 /// A clipboard event.
@@ -235,13 +309,14 @@ impl From<Vec<PathBuf>> for Content {
 /// The kind of some clipboard [`Content`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[allow(missing_docs)]
-#[non_exhaustive]
 pub enum Kind {
     Text,
     Html,
     #[cfg(feature = "image")]
     Image,
     Files,
+    Standard,
+    Primary,
 }
 
 /// A clipboard image.
@@ -265,8 +340,6 @@ pub enum Error {
     ClipboardOccupied,
 
     /// The clipboard contents were not available in the requested format.
-    /// This could either be due to the clipboard being empty or the clipboard contents having
-    /// an incompatible format to the requested one
     ContentNotAvailable,
 
     /// The image or the text that was about the be transferred to/from the clipboard could not be

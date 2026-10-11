@@ -741,3 +741,81 @@ pub fn danger(theme: &Theme) -> Style {
         selection: None,
     }
 }
+
+pub use crate::text::Ellipsize;
+use crate::Clipboard;
+use crate::widget::Tree as WidgetTree;
+
+/// Checks if the clipboard contains text.
+pub fn clipboard_has_text(clipboard: &dyn Clipboard) -> bool {
+    clipboard
+        .read(crate::clipboard::Kind::Standard)
+        .is_some_and(|s| !s.is_empty())
+}
+
+/// Implement this on a **widget** to enable context menu support for text selection.
+pub trait HasSelectableText {
+    /// Returns the currently selected text, if any.
+    fn selected_text(&self, tree: &WidgetTree) -> Option<String>;
+
+    /// Selects all text.
+    fn select_all(&self, tree: &mut WidgetTree);
+
+    /// Returns `true` if the widget is editable (shows Cut / Paste).
+    fn is_editable(&self) -> bool {
+        false
+    }
+
+    /// Returns `true` if the widget has any text (enables Select All).
+    fn has_text(&self, _tree: &WidgetTree) -> bool {
+        true
+    }
+
+    /// Returns whether the clipboard held text when the context menu was requested.
+    fn clipboard_has_text(&self, _tree: &WidgetTree) -> bool {
+        true
+    }
+
+    /// Returns `true` if the widget is currently focused.
+    fn is_focused(&self, _tree: &WidgetTree) -> bool {
+        false
+    }
+
+    /// Returns the position where the context menu should appear
+    fn context_menu_position(&self, _tree: &WidgetTree) -> Option<Point> {
+        None
+    }
+
+    /// Sets or clears the context menu position.
+    fn set_context_menu_position(
+        &self,
+        _tree: &mut WidgetTree,
+        _pos: Option<Point>,
+    ) {
+    }
+
+    /// Copies the selection to the clipboard.
+    fn copy_to_clipboard(
+        &self,
+        tree: &WidgetTree,
+        clipboard: &mut dyn Clipboard,
+    ) {
+        if let Some(text) = self.selected_text(tree) {
+            clipboard.write(crate::clipboard::Kind::Standard, text);
+        }
+    }
+
+    /// Deletes the selected text and returns the new full content.
+    fn delete_selection(&self, _tree: &mut WidgetTree) -> Option<String> {
+        None
+    }
+
+    /// Inserts `text` at the cursor and returns the new full content.
+    fn paste_text(
+        &self,
+        _tree: &mut WidgetTree,
+        _text: &str,
+    ) -> Option<String> {
+        None
+    }
+}

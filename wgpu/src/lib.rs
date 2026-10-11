@@ -723,6 +723,7 @@ impl core::Renderer for Renderer {
 }
 
 impl core::text::Renderer for Renderer {
+    type Font = Font;
     type Paragraph = Paragraph;
     type Editor = Editor;
     type Raw = Raw;

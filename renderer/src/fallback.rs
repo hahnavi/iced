@@ -94,8 +94,9 @@ where
 impl<A, B> core::text::Renderer for Renderer<A, B>
 where
     A: core::text::Renderer,
-    B: core::text::Renderer<Paragraph = A::Paragraph, Editor = A::Editor, Raw = A::Raw>,
+    B: core::text::Renderer<Paragraph = A::Paragraph, Editor = A::Editor, Raw = A::Raw, Font = A::Font>,
 {
+    type Font = A::Font;
     type Paragraph = A::Paragraph;
     type Editor = A::Editor;
     type Raw = A::Raw;

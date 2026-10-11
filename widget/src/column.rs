@@ -563,3 +563,19 @@ where
             .overlay(tree, layout, renderer, viewport, translation, window)
     }
 }
+
+/// Creates a [`Column`] with the given capacity.
+pub fn with_capacity<W>(capacity: usize) -> Column<W> {
+    Column::with_capacity(capacity)
+}
+
+/// Creates a [`Column`] with the given elements.
+pub fn with_children<W>(
+    children: impl IntoIterator<Item = W>,
+) -> Column<W>
+where
+    W: Meta,
+{
+    Column::with_children(children)
+}
+

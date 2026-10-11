@@ -40,6 +40,7 @@ impl Renderer for () {
 }
 
 impl text::Renderer for () {
+    type Font = Font;
     type Paragraph = ();
     type Editor = ();
     type Raw = ();

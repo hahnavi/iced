@@ -567,3 +567,19 @@ where
             .overlay(tree, layout, renderer, viewport, translation, window)
     }
 }
+
+/// Creates a [`Row`] with the given capacity.
+pub fn with_capacity<W>(capacity: usize) -> Row<W> {
+    Row::with_capacity(capacity)
+}
+
+/// Creates a [`Row`] with the given elements.
+pub fn with_children<W>(
+    children: impl IntoIterator<Item = W>,
+) -> Row<W>
+where
+    W: Meta,
+{
+    Row::with_children(children)
+}
+

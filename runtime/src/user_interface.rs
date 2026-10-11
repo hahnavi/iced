@@ -13,8 +13,9 @@ use crate::core::text;
 use crate::core::widget;
 use crate::core::widget::operation::{self, Operation};
 use crate::core::window;
+use crate::core::clipboard;
 use crate::core::{
-    Clipboard, InputMethod, Layout, Point, Rectangle, Shell, Size, Vector, Widget, Window,
+    InputMethod, Layout, Point, Rectangle, Shell, Size, Vector, Widget, Window,
 };
 
 /// A set of interactive graphical elements with a specific [`Layout`].
@@ -210,7 +211,7 @@ where
         let mut status = shell::Invalidation::None;
         let mut redraw_request = window::RedrawRequest::Wait;
         let mut input_method = InputMethod::Disabled;
-        let mut clipboard = Clipboard::new();
+        let mut clipboard = clipboard::Requests::new();
         let mut layout = Layout::new(self.state.size);
         let viewport = Rectangle::with_size(self.bounds);
 
@@ -723,7 +724,7 @@ pub enum State {
         /// The current [`InputMethod`] strategy of the user interface.
         input_method: InputMethod,
         /// The set of [`Clipboard`] requests that the user interface has produced.
-        clipboard: Clipboard,
+        clipboard: clipboard::Requests,
         /// The [`Change`] that the [`UserInterface`] experienced.
         change: Change,
     },

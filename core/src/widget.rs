@@ -60,6 +60,16 @@ pub trait Widget<Message, Theme, Renderer>: Meta {
         tree.children.clear();
     }
 
+    /// Returns a [`Size`] hint for laying out the [`Widget`].
+    fn size_hint(&self) -> Size<Length> {
+        self.size()
+    }
+
+    /// Returns the state [`Tree`] of the children of the [`Widget`].
+    fn children(&self) -> Vec<Tree> {
+        Vec::new()
+    }
+
     /// Lays out the [`Widget`].
     ///
     /// This computes the [`Layout`] of the [`Widget`] and stores the result
