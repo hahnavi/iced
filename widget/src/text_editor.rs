@@ -43,7 +43,8 @@ use crate::core::theme;
 use crate::core::widget::{self, Widget};
 use crate::core::window;
 use crate::core::{
-    Background, Border, Color, Event, Font, Length, Padding, Pixels, Rectangle, Shell, Size, Theme,
+    Background, Border, Color, Event, Font, Length, Padding, Pixels, Point, Rectangle, Shell, Size,
+    Theme,
 };
 
 use std::borrow::Cow;
@@ -213,6 +214,18 @@ where
         self
     }
 
+    /// Sets the minimum height of the [`TextEditor`].
+    pub fn min_height(mut self, min_height: impl Into<Pixels>) -> Self {
+        self.height = self.height.min(min_height);
+        self
+    }
+
+    /// Sets the maximum height of the [`TextEditor`].
+    pub fn max_height(mut self, max_height: impl Into<Pixels>) -> Self {
+        self.height = self.height.max(max_height);
+        self
+    }
+
     /// Sets the message that should be produced when some action is performed in
     /// the [`TextEditor`].
     ///
@@ -321,6 +334,15 @@ pub struct State<Parser: text::Parser> {
     pub parser_settings: Parser::Settings,
     /// The last theme.
     pub last_theme: RefCell<Option<String>>,
+    /// Context menu position.
+    pub context_menu_position: Option<Point>,
+}
+
+impl<Parser: text::Parser> State<Parser> {
+    /// Returns whether the [`TextEditor`] is focused.
+    pub fn is_focused(&self) -> bool {
+        self.editor.is_focused()
+    }
 }
 
 impl<Parser, Message, Theme, Renderer> widget::Meta
@@ -349,6 +371,7 @@ where
             parser: RefCell::new(Parser::new(&self.parser_settings)),
             parser_settings: self.parser_settings.clone(),
             last_theme: RefCell::new(None),
+            context_menu_position: None,
         })
     }
 
@@ -400,11 +423,29 @@ where
         shell: &mut Shell<'_, Message>,
         _viewport: &Rectangle,
     ) {
+        let state = tree.state.downcast_mut::<State<Parser>>();
+
+        match event {
+            Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Right)) => {
+                if let Some(pos) = cursor.position_over(layout.bounds()) {
+                    state.context_menu_position = Some(pos);
+                    shell.capture_event();
+                    return;
+                }
+            }
+            Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
+                if state.context_menu_position.take().is_some() {
+                    shell.capture_event();
+                    return;
+                }
+            }
+            _ => {}
+        }
+
         let Some(on_edit) = self.on_edit.as_ref() else {
             return;
         };
 
-        let state = tree.state.downcast_mut::<State<Parser>>();
         let is_redraw = matches!(event, Event::Window(window::Event::RedrawRequested(_now)),);
 
         let editor = &self.content.0.borrow().editor;
@@ -837,5 +878,57 @@ pub fn default(theme: &Theme, status: Status) -> Style {
             placeholder: palette.background.strongest.color,
             ..active
         },
+    }
+}
+
+use crate::core::widget::text::HasSelectableText;
+
+impl<Parser, Message, Theme, Renderer> HasSelectableText
+    for TextEditor<'_, Parser, Message, Theme, Renderer>
+where
+    Parser: text::Parser,
+    Theme: Catalog,
+    Renderer: text::Renderer,
+{
+    fn selected_text(&self, _tree: &widget::Tree) -> Option<String> {
+        self.content.selection()
+    }
+
+    fn select_all(&self, _tree: &mut widget::Tree) {}
+
+    fn is_editable(&self) -> bool {
+        self.on_edit.is_some()
+    }
+
+    fn is_focused(&self, tree: &widget::Tree) -> bool {
+        tree.state.downcast_ref::<State<Parser>>().editor.is_focused()
+    }
+
+    fn context_menu_position(&self, tree: &widget::Tree) -> Option<Point> {
+        tree.state
+            .downcast_ref::<State<Parser>>()
+            .context_menu_position
+    }
+
+    fn set_context_menu_position(
+        &self,
+        tree: &mut widget::Tree,
+        pos: Option<Point>,
+    ) {
+        tree.state
+            .downcast_mut::<State<Parser>>()
+            .context_menu_position = pos;
+    }
+
+    fn delete_selection(&self, _tree: &mut widget::Tree) -> Option<String> {
+        None
+    }
+
+    fn paste_text(
+        &self,
+        _tree: &mut widget::Tree,
+        _text: &str,
+    ) -> Option<String> {
+        None
     }
 }

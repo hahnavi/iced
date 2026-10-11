@@ -1,7 +1,7 @@
 //! Draw paragraphs.
 use crate::alignment;
 use crate::text::{
-    Alignment, Difference, Ellipsis, Hit, LineHeight, Shaping, Span, Target, Text, Wrapping,
+    Affinity, Alignment, Difference, Ellipsis, Hit, LineHeight, Shaping, Span, Target, Text, Wrapping,
 };
 use crate::{Font, Pixels, Point, Rectangle, Size};
 
@@ -106,6 +106,31 @@ pub trait Paragraph: Sized + Default {
     fn min_height(&self) -> f32 {
         self.min_bounds().height
     }
+
+    /// Returns the visual position of a cursor at the given byte index and [`Affinity`].
+    fn cursor_position(
+        &self,
+        _line: usize,
+        _byte_index: usize,
+        _affinity: Affinity,
+    ) -> Option<Point> {
+        None
+    }
+
+    /// Highlights the text within the given range.
+    fn highlight(
+        &self,
+        _line: usize,
+        _start: (usize, Affinity),
+        _end: (usize, Affinity),
+    ) -> Vec<Rectangle> {
+        Vec::new()
+    }
+
+    /// Returns `true` if the line is RTL, `false` for LTR.
+    fn is_rtl(&self, _line: usize) -> Option<bool> {
+        None
+    }
 }
 
 /// A [`Paragraph`] of plain text.
@@ -183,6 +208,11 @@ impl<P: Paragraph> Plain<P> {
     /// Returns the cached [`Paragraph`], mutably.
     pub fn raw_mut(&mut self) -> &mut P {
         &mut self.raw
+    }
+
+    /// Resizes the plain [`Paragraph`].
+    pub fn resize(&mut self, new_bounds: Size) {
+        self.raw.resize(new_bounds);
     }
 
     /// Returns the current content of the plain [`Paragraph`].

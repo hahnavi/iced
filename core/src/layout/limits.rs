@@ -17,6 +17,9 @@ pub struct Limits {
 }
 
 impl Limits {
+    /// No limits.
+    pub const NONE: Limits = Limits::new(Size::ZERO, Size::INFINITY);
+
     /// Creates new [`Limits`] with the given minimum and maximum [`Size`].
     pub const fn new(min: Size, max: Size) -> Limits {
         Limits::with_flags(min, max, Size::new(false, false), Size::new(false, false))

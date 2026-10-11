@@ -131,6 +131,11 @@ impl Theme {
         }
     }
 
+    /// Returns the extended [`Palette`] of the [`Theme`].
+    pub fn extended_palette(&self) -> &Palette {
+        self.palette()
+    }
+
     /// Returns the [`Seed`](palette::Seed) of the [`Theme`].
     pub fn seed(&self) -> palette::Seed {
         match self {

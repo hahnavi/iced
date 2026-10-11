@@ -434,6 +434,23 @@ pub struct State<P: Paragraph> {
     pub is_hovered: bool,
 }
 
+impl<P: Paragraph> State<P> {
+    /// Returns the underlying [`Paragraph`].
+    pub fn raw(&self) -> &P {
+        self.paragraph.raw()
+    }
+
+    /// Returns the underlying mutable [`Paragraph`].
+    pub fn raw_mut(&mut self) -> &mut P {
+        self.paragraph.raw_mut()
+    }
+
+    /// Returns whether the text is keyboard focused.
+    pub fn is_keyboard_focused(&self) -> bool {
+        false
+    }
+}
+
 /// The state of a widget with text, operated on by [`super::Operation::text`].
 pub struct Operand<'a, P: Paragraph> {
     /// The [`Paragraph`] of the widget.

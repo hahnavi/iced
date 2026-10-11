@@ -1,4 +1,4 @@
-use crate::{Alignment, Radians, Vector};
+use crate::{Alignment, Length, Radians, Vector};
 
 /// An amount of space in 2 dimensions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -25,6 +25,9 @@ impl Size {
 
     /// A [`Size`] with infinite width and height.
     pub const INFINITE: Size = Size::new(f32::INFINITY, f32::INFINITY);
+
+    /// A [`Size`] with infinite width and height.
+    pub const INFINITY: Size = Self::INFINITE;
 
     /// Returns the minimum of each component of this size and another.
     pub fn min(self, other: Self) -> Self {
@@ -197,5 +200,21 @@ where
             width: self.width * scale.x,
             height: self.height * scale.y,
         }
+    }
+}
+
+impl<T: Copy> Size<T> {
+    /// Returns itself (compatibility helper).
+    pub fn size(&self) -> Self {
+        *self
+    }
+}
+
+impl Size<Length> {
+    /// Returns true if either `width` or `height` are 0-sized.
+    #[inline]
+    pub fn is_void(&self) -> bool {
+        matches!(self.width, Length::Fixed(0.0))
+            || matches!(self.height, Length::Fixed(0.0))
     }
 }

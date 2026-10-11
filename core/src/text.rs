@@ -327,6 +327,18 @@ pub struct Hit {
     pub index: usize,
 }
 
+impl Hit {
+    /// Returns the cursor character offset.
+    pub fn cursor(&self) -> usize {
+        self.index
+    }
+
+    /// Returns the affinity.
+    pub fn affinity(&self) -> Affinity {
+        Affinity::Before
+    }
+}
+
 /// The difference detected in some text.
 ///
 /// You will obtain a [`Difference`] when you [`compare`] a [`Paragraph`] with some

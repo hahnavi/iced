@@ -9,6 +9,7 @@ static NEXT_WINDOW_ID: AtomicU64 = AtomicU64::new(1);
 
 /// The identifier of a generic widget.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[repr(transparent)]
 pub struct Id(pub Internal);
 
 impl Id {
@@ -37,7 +38,15 @@ impl Id {
 
     /// Groups several widget identifiers under one identifier.
     pub fn grouped(ids: impl IntoIterator<Item = Id>) -> Self {
-        Self(Internal::Set(ids.into_iter().map(|id| id.0).collect()))
+        Self(Internal::Set(ids.into_iter().collect()))
+    }
+
+    /// Returns the identifiers in this group, if this is a grouped identifier.
+    pub fn grouped_ids(&self) -> Option<&[Id]> {
+        match &self.0 {
+            Internal::Set(ids) => Some(ids),
+            Internal::Unique(_) | Internal::Custom(_, _) => None,
+        }
     }
 
     /// Returns a stable numeric identifier suitable for native drag-and-drop APIs.
@@ -118,7 +127,7 @@ pub enum Internal {
     /// XXX Only meant to be used for widgets that have multiple accessibility nodes, each with a
     /// unique or custom id
     /// an Id Set, which is equal to any [`Id`] with a matching number or string
-    Set(Vec<Self>),
+    Set(Vec<Id>),
 }
 
 impl PartialEq for Internal {
@@ -151,7 +160,7 @@ impl IdEq for Internal {
             (Self::Set(l0), Self::Set(r0)) => l0 == r0,
             // allow set ids to just be equal to any of their members
             (Self::Set(l0), r) | (r, Self::Set(l0)) => {
-                l0.iter().any(|l| l == r)
+                l0.iter().any(|l| &l.0 == r)
             }
         }
     }

@@ -29,8 +29,8 @@ use crate::core::theme;
 use crate::core::widget::tree::{self, Tree};
 use crate::core::widget::{self, Id, Operation};
 use crate::core::{
-    self, Background, Color, Event, Layout, Length, Padding, Rectangle, Shadow, Shell, Size, Theme,
-    Vector, Widget, color,
+    self, Background, Color, Event, Layout, Length, Padding, Pixels, Rectangle, Shadow, Shell, Size,
+    Theme, Vector, Widget, color,
 };
 
 use iced_runtime::{Action, Task, task};
@@ -110,6 +110,18 @@ where
     /// Sets the height of the [`Container`].
     pub fn height(mut self, height: impl Into<Length>) -> Self {
         self.height = height.into();
+        self
+    }
+
+    /// Sets the maximum width of the [`Container`].
+    pub fn max_width(mut self, max_width: impl Into<Pixels>) -> Self {
+        self.width = self.width.max(max_width);
+        self
+    }
+
+    /// Sets the maximum height of the [`Container`].
+    pub fn max_height(mut self, max_height: impl Into<Pixels>) -> Self {
+        self.height = self.height.max(max_height);
         self
     }
 
