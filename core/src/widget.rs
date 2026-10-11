@@ -37,7 +37,12 @@ use crate::{Event, Length, Rectangle, Shell, Size, Vector};
 /// [`custom_widget`]: https://github.com/iced-rs/iced/tree/master/examples/custom_widget
 /// [`geometry`]: https://github.com/iced-rs/iced/tree/master/examples/geometry
 /// [`iced_wgpu`]: https://github.com/iced-rs/iced/tree/master/wgpu
-pub trait Widget<Message, Theme, Renderer>: Meta {
+pub trait Widget<Message, Theme, Renderer> {
+    /// Returns whether the [`Widget`] is [`Void`].
+    fn is_void(&self) -> bool {
+        false
+    }
+
     /// Returns the [`Size`] of the [`Widget`] in lengths.
     fn size(&self) -> Size<Length>;
 
