@@ -6,10 +6,17 @@ use crate::graphics::color;
 use crate::graphics::compositor;
 use crate::graphics::{self, Antialiasing, Shell, Viewport};
 use crate::{Engine, Renderer};
+use raw_window_handle::RawDisplayHandle;
+
+pub struct Surface {
+    surface: wgpu::Surface<'static>,
+    _window: Box<dyn compositor::Window>,
+}
 
 /// A window graphics backend for iced powered by `wgpu`.
 pub struct Compositor {
     instance: wgpu::Instance,
+    display_handle: RawDisplayHandle,
     adapter: wgpu::Adapter,
     format: wgpu::TextureFormat,
     alpha_mode: wgpu::CompositeAlphaMode,
@@ -49,10 +56,15 @@ impl Compositor {
     /// Returns `None` if no compatible graphics adapter could be found.
     pub async fn request(
         settings: Settings,
-        _display: impl compositor::Display,
+        display: impl compositor::Display,
         compatible_window: impl compositor::Window,
         shell: Shell,
     ) -> Result<Self, Error> {
+        let display_handle = display
+            .display_handle()
+            .map_err(|_| Error::IncompatibleSurface)?
+            .as_raw();
+
         let instance = wgpu::util::new_instance_with_webgpu_detection(wgpu::InstanceDescriptor {
             backends: settings.backends,
             flags: if cfg!(feature = "strict-assertions") {
@@ -77,10 +89,23 @@ impl Compositor {
             log::info!("Available adapters: {available_adapters:#?}");
         }
 
+        let window_handle = compatible_window
+            .window_handle()
+            .map_err(|_| Error::IncompatibleSurface)?
+            .as_raw();
+
+        // SAFETY: the event loop owns the display handle for the compositor's lifetime, and
+        // `compatible_window` remains alive while this temporary surface exists.
         #[allow(unsafe_code)]
-        let compatible_surface = instance
-            .create_surface(wgpu::SurfaceTarget::Window(Box::new(compatible_window)))
-            .ok();
+        let compatible_surface = Some(
+            unsafe {
+                instance.create_surface_unsafe(wgpu::SurfaceTargetUnsafe::RawHandle {
+                    raw_display_handle: Some(display_handle),
+                    raw_window_handle: window_handle,
+                })
+            }
+            .map_err(Error::SurfaceCreationFailed)?,
+        );
 
         let power_preference = match settings.power_preference {
             backend::PowerPreference::None => wgpu::PowerPreference::None,
@@ -198,6 +223,7 @@ impl Compositor {
 
                     return Ok(Compositor {
                         instance,
+                        display_handle,
                         adapter,
                         format,
                         alpha_mode,
@@ -228,12 +254,12 @@ pub async fn new(
 /// Presents the given primitives with the given [`Compositor`].
 pub fn present(
     renderer: &mut Renderer,
-    surface: &mut wgpu::Surface<'static>,
+    surface: &mut Surface,
     viewport: &Viewport,
     background_color: Color,
     on_pre_present: impl FnOnce(),
 ) -> Result<(), compositor::SurfaceError> {
-    match surface.get_current_texture() {
+    match surface.surface.get_current_texture() {
         wgpu::CurrentSurfaceTexture::Success(frame) => {
             let view = &frame
                 .texture
@@ -264,7 +290,7 @@ pub fn present(
 
 impl graphics::Compositor for Compositor {
     type Renderer = Renderer;
-    type Surface = wgpu::Surface<'static>;
+    type Surface = Surface;
 
     async fn new(
         settings: backend::Settings,
@@ -304,10 +330,24 @@ impl graphics::Compositor for Compositor {
         width: u32,
         height: u32,
     ) -> Self::Surface {
-        let mut surface = self
-            .instance
-            .create_surface(wgpu::SurfaceTarget::Window(Box::new(window)))
-            .expect("Create surface");
+        let window_handle = window.window_handle().expect("Get window handle").as_raw();
+
+        // SAFETY: the event loop owns the display handle for the compositor's lifetime, and
+        // `_window` keeps this window alive for the entire lifetime of the surface.
+        #[allow(unsafe_code)]
+        let raw_surface = unsafe {
+            self.instance
+                .create_surface_unsafe(wgpu::SurfaceTargetUnsafe::RawHandle {
+                    raw_display_handle: Some(self.display_handle),
+                    raw_window_handle: window_handle,
+                })
+        }
+        .expect("Create surface");
+
+        let mut surface = Surface {
+            surface: raw_surface,
+            _window: Box::new(window),
+        };
 
         if width > 0 && height > 0 {
             self.configure_surface(&mut surface, width, height);
@@ -317,7 +357,7 @@ impl graphics::Compositor for Compositor {
     }
 
     fn configure_surface(&mut self, surface: &mut Self::Surface, width: u32, height: u32) {
-        surface.configure(
+        surface.surface.configure(
             &self.engine.device,
             &wgpu::SurfaceConfiguration {
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT,

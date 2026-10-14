@@ -437,6 +437,8 @@ pub struct State<P: Paragraph> {
     pub paragraph: paragraph::Plain<P>,
     /// Whether the text is hovered.
     pub is_hovered: bool,
+    /// Context menu position on right-click.
+    pub context_menu_position: Option<Point>,
 }
 
 impl<P: Paragraph> State<P> {
@@ -453,6 +455,36 @@ impl<P: Paragraph> State<P> {
     /// Returns whether the text is keyboard focused.
     pub fn is_keyboard_focused(&self) -> bool {
         false
+    }
+
+    /// Returns the context menu position.
+    pub fn context_menu_position(&self) -> Option<Point> {
+        self.context_menu_position
+    }
+
+    /// Sets the context menu position.
+    pub fn set_context_menu_position(&mut self, pos: Option<Point>) {
+        self.context_menu_position = pos;
+    }
+
+    /// Returns the selected text.
+    pub fn selected_text(&mut self) -> Option<String> {
+        self.paragraph.raw_mut().copy()
+    }
+
+    /// Selects all text.
+    pub fn select_all(&mut self) {
+        self.paragraph.raw_mut().select_all();
+    }
+
+    /// Returns whether the paragraph has non-empty text.
+    pub fn has_text(&self) -> bool {
+        !self.paragraph.content().is_empty()
+    }
+
+    /// Returns whether the clipboard has text.
+    pub fn clipboard_has_text(&self) -> bool {
+        true
     }
 }
 
@@ -569,6 +601,12 @@ fn update<P: Paragraph + 'static>(
             let translation = anchor - Point::ORIGIN;
 
             state.is_hovered = state.paragraph.raw().hit_glyph(position - translation);
+        }
+        Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Right)) => {
+            if let Some(pos) = cursor.position_over(layout.bounds()) {
+                let state = tree.state.downcast_mut::<State<P>>();
+                state.context_menu_position = Some(pos);
+            }
         }
         _ => {}
     }
@@ -844,6 +882,15 @@ pub trait HasSelectableText {
         _text: &str,
     ) -> Option<String> {
         None
+    }
+}
+
+impl<Theme: Catalog> HasSelectableText for Text<'_, Theme> {
+    fn selected_text(&self, _tree: &WidgetTree) -> Option<String> {
+        None
+    }
+
+    fn select_all(&self, _tree: &mut WidgetTree) {
     }
 }
 
