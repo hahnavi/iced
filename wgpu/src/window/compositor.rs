@@ -357,6 +357,16 @@ impl graphics::Compositor for Compositor {
     }
 
     fn configure_surface(&mut self, surface: &mut Self::Surface, width: u32, height: u32) {
+        // wgpu requires the queue to be idle while reconfiguring a surface.
+        // Background submissions (e.g. from the image loader worker thread)
+        // racing with this would be reported as a fatal `GpuWaitTimeout`
+        // error, so serialize them with the shared submission lock.
+        let _guard = self
+            .engine
+            .submission_lock
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+
         surface.surface.configure(
             &self.engine.device,
             &wgpu::SurfaceConfiguration {

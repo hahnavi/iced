@@ -18,7 +18,7 @@ use crate::nudge;
 use bytemuck::{Pod, Zeroable};
 
 use std::mem;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 pub use crate::graphics::Image;
 
@@ -176,12 +176,19 @@ impl Pipeline {
         }
     }
 
-    pub fn create_cache(&self, device: &wgpu::Device, queue: &wgpu::Queue, shell: &Shell) -> Cache {
+    pub fn create_cache(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        submission_lock: Arc<Mutex<()>>,
+        shell: &Shell,
+    ) -> Cache {
         Cache::new(
             device,
             queue,
             self.backend,
             self.texture_layout.clone(),
+            submission_lock,
             shell,
         )
     }

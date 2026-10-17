@@ -4,7 +4,7 @@ use crate::quad;
 use crate::text;
 use crate::triangle;
 
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 
 #[derive(Clone)]
 pub struct Engine {
@@ -18,6 +18,11 @@ pub struct Engine {
     #[cfg(any(feature = "image", feature = "svg"))]
     pub(crate) image_pipeline: crate::image::Pipeline,
     pub(crate) primitive_storage: Arc<RwLock<primitive::Storage>>,
+    // Held while reconfiguring a surface to keep queue submissions from other
+    // threads (currently the image loader worker) from racing with it. wgpu
+    // versions up to 30.0.1 treat such a submission as a fatal error
+    // (`ConfigureSurfaceError::GpuWaitTimeout`); see gfx-rs/wgpu#10296.
+    pub(crate) submission_lock: Arc<Mutex<()>>,
     _shell: Shell,
 }
 
@@ -45,6 +50,7 @@ impl Engine {
             },
 
             primitive_storage: Arc::new(RwLock::new(primitive::Storage::default())),
+            submission_lock: Arc::new(Mutex::new(())),
 
             device,
             queue,
@@ -54,8 +60,12 @@ impl Engine {
 
     #[cfg(any(feature = "image", feature = "svg"))]
     pub fn create_image_cache(&self) -> crate::image::Cache {
-        self.image_pipeline
-            .create_cache(&self.device, &self.queue, &self._shell)
+        self.image_pipeline.create_cache(
+            &self.device,
+            &self.queue,
+            self.submission_lock.clone(),
+            &self._shell,
+        )
     }
 
     pub fn trim(&mut self) {

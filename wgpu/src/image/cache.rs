@@ -8,7 +8,7 @@ use worker::Worker;
 #[cfg(feature = "image")]
 use std::collections::HashMap;
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 pub struct Cache {
     atlas: Atlas,
@@ -26,10 +26,18 @@ impl Cache {
         _queue: &wgpu::Queue,
         backend: wgpu::Backend,
         layout: wgpu::BindGroupLayout,
+        _submission_lock: Arc<Mutex<()>>,
         _shell: &Shell,
     ) -> Self {
         #[cfg(all(feature = "image", not(target_arch = "wasm32")))]
-        let worker = Worker::new(device, _queue, backend, layout.clone(), _shell);
+        let worker = Worker::new(
+            device,
+            _queue,
+            backend,
+            layout.clone(),
+            _submission_lock,
+            _shell,
+        );
 
         Self {
             atlas: Atlas::new(device, backend, layout),
@@ -386,8 +394,8 @@ mod worker {
     use crate::image::atlas::{self, Atlas};
     use crate::image::raster;
 
-    use std::sync::Arc;
     use std::sync::mpsc;
+    use std::sync::{Arc, Mutex};
     use std::thread;
 
     pub struct Worker {
@@ -403,6 +411,7 @@ mod worker {
             queue: &wgpu::Queue,
             backend: wgpu::Backend,
             texture_layout: wgpu::BindGroupLayout,
+            submission_lock: Arc<Mutex<()>>,
             shell: &Shell,
         ) -> Self {
             let (jobs_sender, jobs_receiver) = mpsc::sync_channel(1_000);
@@ -414,6 +423,7 @@ mod worker {
                 queue: queue.clone(),
                 backend,
                 texture_layout,
+                submission_lock,
                 shell: shell.clone(),
                 belt: wgpu::util::StagingBelt::new(device.clone(), 4 * 1024 * 1024),
                 jobs: jobs_receiver,
@@ -467,6 +477,7 @@ mod worker {
         queue: wgpu::Queue,
         backend: wgpu::Backend,
         texture_layout: wgpu::BindGroupLayout,
+        submission_lock: Arc<Mutex<()>>,
         shell: Shell,
         belt: wgpu::util::StagingBelt,
         jobs: mpsc::Receiver<Job>,
@@ -584,9 +595,21 @@ mod worker {
             let output = self.output.clone();
             let shell = self.shell.clone();
 
-            self.belt.finish();
-            let submission = self.queue.submit([encoder.finish()]);
-            self.belt.recall();
+            // Hold the submission lock while submitting so that this background
+            // upload can never race with a `Surface::configure` on the main
+            // thread, which wgpu (up to 30.0.1) treats as a fatal error.
+            let submission = {
+                let _guard = self
+                    .submission_lock
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+
+                self.belt.finish();
+                let submission = self.queue.submit([encoder.finish()]);
+                self.belt.recall();
+
+                submission
+            };
 
             let bind_group = atlas.bind_group().clone();
 
